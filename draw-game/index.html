@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Draw game mood boards</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    background: #1d1f23;
+    color: #e9eaec;
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .intro { margin: 0; padding: 10px 12px 2px; color: #b4b8bf; }
+  .intro strong { color: #e9eaec; }
+  .boards {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(min(400px, 90vw), 1fr));
+    gap: 8px;
+    padding: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+  }
+  .board {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #2a2d33;
+    border-radius: 6px;
+    overflow: hidden;
+    scroll-snap-align: start;
+  }
+  .board header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .board .name { font-weight: 700; }
+  .board .direction { color: #b4b8bf; flex: 1; }
+  .board a { color: #9ec5ff; text-decoration: none; white-space: nowrap; }
+  .board a:hover { text-decoration: underline; }
+  .board iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+</style>
+</head>
+<body>
+  <p class="intro"><strong>Draw-and-guess game: four mood boards, two for each candidate name.</strong> Scroll sideways to compare. Each board scrolls on its own.</p>
+  <main class="boards">
+    <section class="board">
+      <header>
+        <span class="name">Pen Panic</span>
+        <span class="direction" id="d1">Rutat</span>
+        <a href="pen-panic-1.html" target="_blank">Open full</a>
+      </header>
+      <iframe src="pen-panic-1.html" title="Pen Panic, board 1"></iframe>
+    </section>
+    <section class="board">
+      <header>
+        <span class="name">Pen Panic</span>
+        <span class="direction" id="d2">Jellybean Arcade</span>
+        <a href="pen-panic-2.html" target="_blank">Open full</a>
+      </header>
+      <iframe src="pen-panic-2.html" title="Pen Panic, board 2"></iframe>
+    </section>
+    <section class="board">
+      <header>
+        <span class="name">Draw Badly</span>
+        <span class="direction" id="d3">Sunday Paint</span>
+        <a href="draw-badly-1.html" target="_blank">Open full</a>
+      </header>
+      <iframe src="draw-badly-1.html" title="Draw Badly, board 1"></iframe>
+    </section>
+    <section class="board">
+      <header>
+        <span class="name">Draw Badly</span>
+        <span class="direction" id="d4">One Bead Off</span>
+        <a href="draw-badly-2.html" target="_blank">Open full</a>
+      </header>
+      <iframe src="draw-badly-2.html" title="Draw Badly, board 2"></iframe>
+    </section>
+  </main>
+</body>
+</html>
