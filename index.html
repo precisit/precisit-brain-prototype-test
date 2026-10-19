@@ -2,11 +2,242 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=tunnel-ox-alpha.html">
-<title>Neon Fractal Tunnel</title>
-<script>location.replace('tunnel-ox-alpha.html');</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Precisit — one-shot model tests</title>
+<style>
+  :root {
+    --space: #072a36;
+    --space-deep: #05212b;
+    --card: #0b3a48;
+    --sky: #54cde4;
+    --ion: #336699;
+    --moon: #a1e4f5;
+    --red: #fd2256;
+    --sun: #f7ca00;
+    --ink: #eaf6fa;
+    --ink-dim: #9db9c4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background-color: var(--space-deep);
+    background-image: radial-gradient(1100px 620px at 12% -8%, #0f4356 0%, rgba(7, 42, 54, 0) 62%);
+    background-repeat: no-repeat;
+    background-position: top left;
+    color: var(--ink);
+    font: 16px/1.55 "Lato", system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 40px 20px 64px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  header.page { margin-bottom: 36px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--sky); margin: 0 0 10px;
+  }
+  h1 { font-size: clamp(28px, 4vw, 42px); line-height: 1.15; margin: 0 0 12px; font-weight: 700; }
+  .lede { margin: 0; max-width: 70ch; color: var(--ink-dim); font-size: 17px; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-size: 13px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--sky); margin: 44px 0 16px; padding-bottom: 8px;
+    border-bottom: 1px solid rgba(84, 205, 228, .18); font-weight: 600;
+  }
+
+  .grid {
+    display: grid; gap: 18px;
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  }
+  .card {
+    background: rgba(255, 255, 255, .035);
+    border: 1px solid rgba(84, 205, 228, .16);
+    border-radius: 10px; overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: border-color .18s ease, transform .18s ease, background .18s ease;
+  }
+  .card:hover {
+    border-color: rgba(84, 205, 228, .5);
+    background: rgba(255, 255, 255, .06);
+    transform: translateY(-2px);
+  }
+  .card a.shot { display: block; position: relative; aspect-ratio: 16 / 10; overflow: hidden; background: #06202a; }
+  .card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .card a.shot::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,33,43,.35) 0%, rgba(5,33,43,0) 35%); pointer-events: none; }
+  .badge {
+    position: absolute; top: 10px; right: 10px;
+    font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    padding: 4px 8px; border-radius: 4px; color: #051f28;
+  }
+  .badge.pass { background: var(--sky); }
+  .badge.fail { background: var(--red); color: #fff; }
+  .badge.fixed { background: var(--sun); }
+  .badge.bonus { background: var(--moon); color: #0a2b35; }
+  .card .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .card h3 { margin: 0; font-size: 18px; line-height: 1.3; }
+  .card h3 a { color: var(--ink); text-decoration: none; }
+  .card h3 a:hover { color: var(--sky); }
+  .meta { font-size: 13px; color: var(--ink-dim); }
+  .meta code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px; color: var(--moon);
+    background: rgba(161, 228, 245, .08); padding: 1px 5px; border-radius: 3px;
+  }
+  .metrics { font-size: 13px; color: var(--ink-dim); margin: 2px 0 0; }
+  .metrics b { color: var(--ink); font-weight: 600; }
+  .note { font-size: 13px; color: var(--ink-dim); margin: 4px 0 0; }
+  .note.warn { color: #ffb3c4; }
+  .open { margin-top: auto; padding-top: 10px; font-size: 14px; }
+  .open a { color: var(--sky); text-decoration: none; border-bottom: 1px solid rgba(84, 205, 228, .35); }
+  .open a:hover { border-bottom-color: var(--sky); }
+
+  details.prompt {
+    margin-top: 20px; background: rgba(255, 255, 255, .035);
+    border: 1px solid rgba(84, 205, 228, .16); border-radius: 10px; padding: 14px 18px;
+  }
+  details.prompt summary { cursor: pointer; color: var(--sky); font-size: 14px; }
+  details.prompt pre {
+    white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px; line-height: 1.5; color: var(--ink-dim); margin: 12px 0 0;
+  }
+  footer.page {
+    margin-top: 46px; padding-top: 18px; border-top: 1px solid rgba(84, 205, 228, .18);
+    font-size: 13px; color: var(--ink-dim);
+  }
+  footer.page a { color: var(--sky); text-decoration: none; }
+</style>
 </head>
 <body>
-<p><a href="tunnel-ox-alpha.html">Neon Fractal Tunnel</a></p>
+<div class="wrap">
+
+  <header class="page">
+    <p class="eyebrow">Precisit · prototype tests</p>
+    <h1>One-shot tests: one prompt, one HTML file</h1>
+    <p class="lede">Every new coding model gets the <strong>same prompt</strong>: a voxel pagoda garden, delivered as a single self-contained HTML file in one generation, with <strong>no fixes</strong> from us. What you see below is exactly what came out of each model.</p>
+  </header>
+
+  <h2>Voxel pagoda — one-shot</h2>
+  <div class="grid">
+
+    <article class="card">
+      <a class="shot" href="pagoda-deepseek-1017.html"><img src="thumbs/pagoda-deepseek-1017.jpg" alt="Voxel pagoda on a floating island at sunset"><span class="badge pass">Pass</span></a>
+      <div class="body">
+        <h3><a href="pagoda-deepseek-1017.html">Pagoda Garden</a></h3>
+        <p class="meta">DeepSeek V4.1-Flash-1017 · <code>deepseek/deepseek-flash</code> · 2026-10-19</p>
+        <p class="metrics"><b>0</b> JS errors · <b>21,859</b> voxels · non-bg <b>99.7 %</b> · colourful <b>72.4 %</b></p>
+        <p class="note">Four-tier pagoda, torii gates, koi pond, waterfalls, cranes. 69 KB, run cost $0.11, ~16 min. The model verified its own output in headless Chrome and fixed a NaN warning before finishing.</p>
+        <p class="open"><a href="pagoda-deepseek-1017.html">Open the page →</a></p>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="pagoda-space-bunny.html"><img src="thumbs/pagoda-space-bunny.jpg" alt="Sakura pagoda diorama with pink cherry trees in dawn light"><span class="badge pass">Pass</span></a>
+      <div class="body">
+        <h3><a href="pagoda-space-bunny.html">Sakura Pagoda</a></h3>
+        <p class="meta">Space Bunny Alpha (stealth) · <code>opencode/space-bunny-free</code> · 2026-09-28</p>
+        <p class="metrics"><b>0</b> JS errors · non-bg <b>96.9 %</b> · <b>162k</b> unique colours</p>
+        <p class="note">Fully procedural, zero external calls, fixed seed. Four times of day and three quality levels in the UI. 97 KB.</p>
+        <p class="open"><a href="pagoda-space-bunny.html">Open the page →</a></p>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="pagoda-deepseek41-deepseek.html"><img src="thumbs/pagoda-deepseek41-deepseek.jpg" alt="Voxel pagoda garden lit in blue evening light"><span class="badge pass">Pass</span></a>
+      <div class="body">
+        <h3><a href="pagoda-deepseek41-deepseek.html">Voxel Pagoda Garden</a></h3>
+        <p class="meta">DeepSeek V4.1 Flash, direct · <code>deepseek/deepseek-v4.1-flash</code> · 2026-09-26</p>
+        <p class="metrics"><b>0</b> JS errors · non-bg <b>99.1 %</b> · colourful <b>85.6 %</b></p>
+        <p class="note">Same model via the DeepSeek provider, run to compare routing against NVIDIA.</p>
+        <p class="open"><a href="pagoda-deepseek41-deepseek.html">Open the page →</a></p>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="pagoda-deepseek41-nvidia.html"><img src="thumbs/pagoda-deepseek41-nvidia.jpg" alt="Voxel pagoda garden in blue daylight"><span class="badge pass">Pass</span></a>
+      <div class="body">
+        <h3><a href="pagoda-deepseek41-nvidia.html">Voxel Pagoda Garden</a></h3>
+        <p class="meta">DeepSeek V4.1 Flash via NVIDIA · <code>nvidia/deepseek-ai/deepseek-v4.1-flash</code> · 2026-09-26</p>
+        <p class="metrics"><b>0</b> JS errors · non-bg <b>88.3 %</b> · colourful <b>68.9 %</b></p>
+        <p class="note">Slower to build than the other pages: it shows "building the voxel garden…" for roughly 10–20 seconds before the scene appears.</p>
+        <p class="open"><a href="pagoda-deepseek41-nvidia.html">Open the page →</a></p>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="pagoda-ox-alpha.html"><img src="thumbs/pagoda-ox-alpha.jpg" alt="Hanami pagoda voxel garden at dusk"><span class="badge pass">Reference</span></a>
+      <div class="body">
+        <h3><a href="pagoda-ox-alpha.html">Hanami Pagoda</a></h3>
+        <p class="meta">Ox Alpha · <code>opencode/x-preview-f-free</code> · 2026-08-22</p>
+        <p class="metrics"><b>0</b> JS errors · non-bg <b>93.8 %</b> · colourful <b>90.3 %</b></p>
+        <p class="note">The reference run the later tests are compared against: floating island, koi pond, mixed seasons, dusk lighting.</p>
+        <p class="open"><a href="pagoda-ox-alpha.html">Open the page →</a></p>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="pagoda-mimo.html"><img src="thumbs/pagoda-mimo.jpg" alt="Black screen, the failed mimo page"><span class="badge fail">Fail</span></a>
+      <div class="body">
+        <h3><a href="pagoda-mimo.html">Voxel Pagoda Garden (original)</a></h3>
+        <p class="meta">MiMo v2.5 Free · <code>opencode/mimo-v2.5-free</code> · 2026-08-31</p>
+        <p class="metrics"><b>1</b> JS error · black screen · non-bg <b>0.2 %</b></p>
+        <p class="note warn">ReferenceError <code>z is not defined</code> at line 276. The file deployed fine but rendered nothing: the model never tested its own output. Kept as evidence, not as a demo.</p>
+        <p class="open"><a href="pagoda-mimo.html">Open the page →</a></p>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="pagoda-mimo-fixed.html"><img src="thumbs/pagoda-mimo-fixed.jpg" alt="Voxel pagoda garden in green daylight"><span class="badge fixed">Fixed</span></a>
+      <div class="body">
+        <h3><a href="pagoda-mimo-fixed.html">Voxel Pagoda Garden (fixed)</a></h3>
+        <p class="meta">MiMo v2.5 Free + one-line fix by us · 2026-08-31</p>
+        <p class="metrics"><b>0</b> JS errors · non-bg <b>99.6 %</b> · colourful <b>84.6 %</b></p>
+        <p class="note">Same model, one repaired variable name. Formally still a one-shot failure, but it shows what the scene was supposed to look like.</p>
+        <p class="open"><a href="pagoda-mimo-fixed.html">Open the page →</a></p>
+      </div>
+    </article>
+
+  </div>
+
+  <h2>Other one-shot prototypes</h2>
+  <div class="grid">
+
+    <article class="card">
+      <a class="shot" href="draw-game/index.html"><img src="thumbs/draw-game.jpg" alt="Four draw-game mood boards side by side"><span class="badge bonus">Mood boards</span></a>
+      <div class="body">
+        <h3><a href="draw-game/index.html">Draw game — four mood boards</a></h3>
+        <p class="meta">Prototype explorations · 2026-10-09</p>
+        <p class="metrics">Four variants: <b>Draw Badly</b> 1–2, <b>Pen Panic</b> 1–2</p>
+        <p class="note">Same idea rendered in four different visual directions, one HTML file each.</p>
+        <p class="open"><a href="draw-game/index.html">Open the boards →</a></p>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="tunnel-ox-alpha.html"><img src="thumbs/tunnel-ox-alpha.jpg" alt="Neon fractal tunnel with colourful concentric rings"><span class="badge bonus">Reference</span></a>
+      <div class="body">
+        <h3><a href="tunnel-ox-alpha.html">Neon Fractal Tunnel</a></h3>
+        <p class="meta">Ox Alpha · <code>opencode/x-preview-f-free</code></p>
+        <p class="metrics"><b>0</b> JS errors · non-bg <b>96.6 %</b> · colourful <b>97.7 %</b></p>
+        <p class="note">Single-file WebGL tunnel, kept from the same period as the pagoda reference.</p>
+        <p class="open"><a href="tunnel-ox-alpha.html">Open the page →</a></p>
+      </div>
+    </article>
+
+  </div>
+
+  <details class="prompt">
+    <summary>The prompt every model got — unchanged</summary>
+    <pre>Design and create a very creative, elaborate, and detailed voxel art scene of a pagoda
+in a beautiful garden with trees, including some cherry blossoms. Make the scene
+impressive and varied and use colorful voxels. Use whatever libraries to get this done
+but make sure I can just deploy a single HTML file (call it pagoda-&lt;MODEL&gt;.html) on a
+static host and open it in Chrome. Do NOT modify or overwrite any existing files in the
+repo — only create the new file pagoda-&lt;MODEL&gt;.html.</pre>
+  </details>
+
+  <footer class="page">
+    Figures on this page were measured on 2026-10-19 with the same harness: headless Chromium at 1280×800, seven-second settle (25 s for the NVIDIA page), JS console captured, pixel statistics against the top-left background colour. Older runs were re-measured at the same time, so the numbers are comparable across cards. Runs were made with <a href="https://opencode.ai">opencode</a> in headless mode.
+  </footer>
+
+</div>
 </body>
 </html>
