@@ -1,0 +1,329 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pen Panic · Drawing</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+/* page-local: layout only */
+body{overscroll-behavior:none}
+.app.fixed{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.x-timer{flex:none;display:block;text-decoration:none;cursor:pointer}
+
+/* ---- Pick a word ---- */
+.x-pick{flex:1;min-height:0;display:flex;flex-direction:column;padding:var(--s1) var(--s1) calc(var(--s2) + var(--bottom-safe))}
+.x-pick-intro{margin:auto 0;padding:var(--s2) 0;text-align:center}
+.x-pick-intro .display{margin-bottom:var(--s1)}
+.x-pick-intro .cap{display:inline-flex;align-items:center;gap:6px}
+.x-pick-intro .cap .ic{width:18px;height:18px;stroke:var(--pencil)}
+.x-choices{display:flex;flex-direction:column;gap:var(--s2);padding-right:6px}
+.x-choice{display:flex;align-items:center;justify-content:space-between;gap:var(--s1);min-height:72px;padding:0 var(--s2);text-decoration:none;cursor:pointer}
+.x-choice .w{font:400 32px/36px var(--hand);letter-spacing:.5px}
+.x-choice .cap{text-align:right;line-height:18px}
+.x-choice:active{top:6px;left:6px}
+.x-choice:active::after{display:none}
+
+/* ---- Round (shared layout) ---- */
+.canvas{flex:none;overflow:hidden}
+.x-layer{position:absolute;inset:0;transform-origin:0 0}
+.x-layer img,.x-layer canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+.x-layer img.gone{visibility:hidden}
+
+/* zoom hint and zoom level, both sit on the canvas */
+.x-hint{isolation:isolate;position:absolute;left:50%;bottom:var(--s1);transform:translateX(-50%);display:flex;align-items:center;gap:6px;white-space:nowrap;
+  padding:6px var(--s1);font-size:14px;line-height:24px;font-weight:700;pointer-events:none;transition:opacity .6s}
+.x-hint.out{opacity:0}
+.x-hint .ic{width:20px;height:20px}
+.x-zoom{isolation:isolate;position:absolute;top:6px;right:var(--s1);display:flex;align-items:center;gap:6px;height:var(--tap);padding:0 var(--s1) 0 var(--s1);
+  font:400 21px/48px var(--hand);cursor:pointer}
+.x-zoom[hidden]{display:none}
+.x-zoom .ic{width:20px;height:20px}
+.x-zoom span{font:700 14px/24px var(--read);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px}
+
+/* latest guesses between canvas and kit */
+.x-latest{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-start;gap:2px;overflow:hidden;padding:6px var(--s1)}
+.x-latest .feed{gap:0;flex:0 1 auto;min-height:0;overflow:hidden;flex-direction:column-reverse}   /* lines in reverse DOM order: when short, the oldest is clipped */
+.x-latest .row{justify-content:space-between;min-height:24px}
+.x-latest .feed .g{white-space:nowrap}
+
+/* the kit sits on its own strip of page, ruled off like .app-foot */
+.kit{flex:none;position:relative;isolation:isolate;background-color:var(--paper);box-shadow:inset 0 2px 0 var(--ink);padding-bottom:calc(var(--s1) + var(--bottom-safe))}
+.sw{display:block;width:100%}
+.toolrow{gap:6px;min-height:var(--tap)}
+.toolrow[hidden],.x-confirm[hidden]{display:none}
+.x-confirm{display:flex;align-items:center;gap:var(--s1);min-height:var(--tap);padding-right:6px}
+.x-confirm b{flex:1;min-width:0}
+.x-confirm .btn.sm{padding:0 var(--s1)}
+@media (max-width:359px){
+  .kit{padding-left:6px;padding-right:6px}
+  .toolrow{gap:4px}
+  .tool{min-width:0}
+  .x-confirm{gap:6px}
+  .x-confirm b{font-size:14px;line-height:18px}
+}
+</style>
+</head><body>
+<script src="../defs.js"></script>
+<script src="fake-data.js"></script>
+<div class="app fixed" id="app"></div>
+<script>
+(function(){
+  const PP = window.PP, T = PP.turn3;
+  const q = new URLSearchParams(location.search);
+  const app = document.getElementById('app');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const colourOf = name => (PP.players.find(p => p.name === name) || {}).colour || '--p1';
+  // Categories for the three choices: hedgehog's comes from fake-data; the other two are taken from the room's packs.
+  const CATS = { hedgehog: T.category, otter: 'Animals', pancake: 'Food & Drink' };
+  const cells = (n, warn) => `<span class="cells big${warn ? ' warn' : ''}">${String(n).padStart(2,'0').split('').map(d => `<b>${d}</b>`).join('')}</span>`;
+  const top = (cap, secs, label, href) => `
+    <header class="app-top">
+      <a class="icon-btn" href="index.html" aria-label="All screens"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></a>
+      <div class="grow"><b>Turn ${T.number} of ${PP.room.turns}</b><div class="cap">${cap}</div></div>
+      <a class="x-timer" id="timer" href="${href}" aria-label="${label}">${cells(secs, secs <= 10)}</a>
+    </header>`;
+
+  if (!q.has('draw')) { pick(); } else { draw(); }
+
+  /* ---------------- Pick a word ---------------- */
+  function pick(){
+    let left = 10;
+    app.innerHTML = top("You're drawing", left, 'Ten seconds to pick', '?draw') + `
+      <main class="x-pick">
+        <div class="x-pick-intro">
+          <h1 class="display">Your turn to draw</h1>
+          <p class="lead">Pick a word. Everyone else guesses.</p>
+          <p class="cap"><svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg><span id="auto">We'll pick one for you in 10 s</span></p>
+        </div>
+        <nav class="x-choices" aria-label="Words to choose from">
+          ${T.choices.map(w => `<a class="x-choice box shadow" href="${w === T.word ? '?draw' : '?draw&word=' + w}">
+            <span class="w">${esc(w)}</span><span class="cap">${w.length} letters<br><b>${esc(CATS[w])}</b></span></a>`).join('')}
+        </nav>
+      </main>`;
+    // the countdown header cells are not a timer here; turn off the link-y feel
+    const timer = document.getElementById('timer');
+    timer.removeAttribute('href'); timer.setAttribute('role', 'timer');
+    const iv = setInterval(() => {
+      left--;
+      timer.innerHTML = cells(Math.max(left,0), left <= 3);
+      timer.setAttribute('aria-label', left + ' seconds to pick');
+      document.getElementById('auto').textContent = left > 0 ? `We'll pick one for you in ${left} s` : 'Picking one for you…';
+      if (left <= 0){ clearInterval(iv); location.href = '?draw'; }
+    }, 1000);
+  }
+
+  /* ---------------- Drawing ---------------- */
+  function draw(){
+    const word = (q.get('word') || T.word).toLowerCase();
+    const fresh = word !== T.word;                 // otter / pancake: a new, blank turn
+    let left = fresh ? PP.room.drawSeconds : T.secondsLeft;
+    const results = 'results.html?turn=' + T.number;
+
+    const letters = word.split('').map((c,i) => `<b${!fresh && i === T.hint.index ? ' class="hint"' : ''}>${esc(c)}</b>`).join('');
+    const feed = fresh ? [] : T.feed;
+    const guessers = PP.players.length - 1;
+    const guessed = feed.filter(l => l.guessed).length;
+    const line = l => {
+      const pc = `<i class="pc" style="--c:var(${colourOf(l.who)})"></i>`;
+      if (l.guessed) return `<p class="g ok">${pc}<svg class="ic tick" aria-hidden="true"><use href="#i-tick"/></svg><b>${esc(l.who)}</b> guessed it! <span class="pts">+${l.points}</span></p>`;
+      if (l.react) return `<p class="g">${pc}<b>${esc(l.who)}</b> <span aria-label="reacted">${l.react}</span></p>`;
+      return `<p class="g">${pc}<b>${esc(l.who)}</b> ${esc(l.text)}</p>`;
+    };
+    const SW = ['black','grey','brown','red','orange','yellow','green','white','tan','pink','violet','blue','sky','lime'];
+
+    app.innerHTML = top("You're drawing", left, left + ' seconds left. Skip to results', results) + `
+      <div class="wordrow">
+        <div class="word" role="img" aria-label="Your word: ${esc(word)}">${letters}</div>
+        <span class="cap">${word.length} letters · <span style="white-space:nowrap">${esc(CATS[word] || T.category)}</span></span>
+      </div>
+      <div class="tbarrow"><div class="tbar" id="tbar" role="img" aria-label="Time used">${'<i></i>'.repeat(40)}</div></div>
+
+      <div class="canvas" id="canvas" aria-label="Your drawing. Draw with one finger; two fingers zoom and pan.">
+        <div class="x-layer" id="layer">
+          ${fresh ? '' : `<img id="img" src="drawings/${T.word}.svg" alt="Your drawing so far: a half-finished hedgehog">`}
+          <canvas id="ink"></canvas>
+        </div>
+        <p class="x-hint notice" id="hint"><svg class="ic" aria-hidden="true"><use href="#i-zoom"/></svg>Two fingers to zoom</p>
+        <button type="button" class="x-zoom box shadow" id="zoom" hidden aria-label="Reset zoom"><svg class="ic" aria-hidden="true"><use href="#i-zoom"/></svg><b id="zlev">200%</b><span>Reset</span></button>
+      </div>
+
+      <section class="x-latest" aria-label="Latest guesses" aria-live="polite">
+        <div class="row"><span class="cap">Latest guesses</span><span class="cap"><b>${guessed} of ${guessers}</b> guessed</span></div>
+        <div class="feed">${feed.length ? feed.slice(-3).reverse().map(line).join('') : '<p class="g sys">No guesses yet</p>'}</div>
+      </section>
+
+      <div class="kit" role="toolbar" aria-label="Drawing tools">
+        <div class="sws" role="group" aria-label="Colour">
+          ${SW.map(c => `<button type="button" class="sw${c === 'white' ? ' white' : ''}${c === 'brown' ? ' on' : ''}" style="--c:var(--d-${c})" data-c="${c}" aria-pressed="${c === 'brown'}" aria-label="${c}"></button>`).join('')}
+        </div>
+        <div class="toolrow" id="tools">
+          <div class="tg box" role="group" aria-label="Brush size">
+            ${[['s','Small'],['m','Medium'],['l','Large']].map(([k,n]) => `<button type="button" class="tool${k === 'm' ? ' on' : ''}" data-size="${k}" aria-pressed="${k === 'm'}" aria-label="${n} brush"><svg class="ic" aria-hidden="true"><use href="#i-${k}"/></svg></button>`).join('')}
+          </div>
+          <div class="tg box" role="group" aria-label="Tool">
+            ${[['pen','Pen'],['eraser','Eraser'],['fill','Fill']].map(([k,n]) => `<button type="button" class="tool${k === 'pen' ? ' on' : ''}" data-tool="${k}" aria-pressed="${k === 'pen'}" aria-label="${n}"><svg class="ic" aria-hidden="true"><use href="#i-${k}"/></svg></button>`).join('')}
+          </div>
+          <div class="tg box" role="group" aria-label="Edit">
+            <button type="button" class="tool" id="undo" aria-label="Undo" disabled><svg class="ic" aria-hidden="true"><use href="#i-undo"/></svg></button>
+            <button type="button" class="tool" id="redo" aria-label="Redo" disabled><svg class="ic" aria-hidden="true"><use href="#i-redo"/></svg></button>
+            <button type="button" class="tool" id="clear" aria-label="Clear the page"><svg class="ic" aria-hidden="true"><use href="#i-clear"/></svg></button>
+          </div>
+        </div>
+        <div class="x-confirm" id="confirm" hidden role="alertdialog" aria-label="Clear the page?">
+          <b>Clear the page?</b>
+          <button type="button" class="btn sm" id="doClear">Clear</button>
+          <button type="button" class="btn sm primary" id="keep">Keep</button>
+        </div>
+      </div>`;
+
+    /* timer */
+    const timer = document.getElementById('timer'), bar = document.getElementById('tbar').children;
+    const paint = () => {
+      timer.innerHTML = cells(Math.max(left,0), left <= 10);
+      timer.setAttribute('aria-label', Math.max(left,0) + ' seconds left. Skip to results');
+      const used = Math.floor((PP.room.drawSeconds - left) / 2);
+      for (let i = 0; i < 40; i++){
+        bar[i].className = i < used ? (i >= 35 ? 'late' : 'used') : '';
+      }
+    };
+    paint();
+    const iv = setInterval(() => { left--; paint(); if (left <= 0){ clearInterval(iv); location.href = results; } }, 1000);
+
+    /* tools */
+    const st = { colour: 'brown', size: 'm', tool: 'pen' };
+    const SIZES = { s: 3, m: 7, l: 16 };          // in drawing units (the canvas is 400 x 300)
+    const pressOne = (sel, btn) => document.querySelectorAll(sel).forEach(b => { const on = b === btn; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+    document.querySelectorAll('.sw').forEach(b => b.onclick = () => {
+      pressOne('.sw', b); st.colour = b.dataset.c;
+      if (st.tool === 'eraser') pressOne('[data-tool]', document.querySelector('[data-tool="pen"]')), st.tool = 'pen';
+    });
+    document.querySelectorAll('[data-size]').forEach(b => b.onclick = () => { pressOne('[data-size]', b); st.size = b.dataset.size; });
+    document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => { pressOne('[data-tool]', b); st.tool = b.dataset.tool; });
+
+    const tools = document.getElementById('tools'), confirmBox = document.getElementById('confirm');
+    document.getElementById('clear').onclick = () => { tools.hidden = true; confirmBox.hidden = false; document.getElementById('keep').focus(); };
+    document.getElementById('keep').onclick = () => { confirmBox.hidden = true; tools.hidden = false; document.getElementById('clear').focus(); };
+    document.getElementById('doClear').onclick = () => { push({ clear: true }); confirmBox.hidden = true; tools.hidden = false; };
+
+    /* history: strokes and clears; undo/redo move pos */
+    let ops = [], pos = 0, cur = null;
+    const undoB = document.getElementById('undo'), redoB = document.getElementById('redo');
+    function push(op){ ops = ops.slice(0, pos); ops.push(op); pos = ops.length; render(); }
+    undoB.onclick = () => { if (pos > 0){ pos--; render(); } };
+    redoB.onclick = () => { if (pos < ops.length){ pos++; render(); } };
+
+    /* canvas */
+    const box = document.getElementById('canvas'), layer = document.getElementById('layer');
+    const ink = document.getElementById('ink'), ctx = ink.getContext('2d'), img = document.getElementById('img');
+    const LW = 400, LH = 300;
+    let W = 1, H = 1;
+    function size(){
+      W = box.clientWidth; H = box.clientHeight;
+      const r = (window.devicePixelRatio || 1) * 2;      // extra resolution for zooming in
+      ink.width = Math.round(W * r); ink.height = Math.round(H * r);
+      render();
+    }
+    function stroke(s){
+      ctx.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
+      ctx.strokeStyle = ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--d-' + s.colour).trim() || 'black';
+      ctx.lineWidth = s.w; ctx.lineCap = ctx.lineJoin = 'round';
+      const p = s.pts;
+      if (p.length === 1){ ctx.beginPath(); ctx.arc(p[0][0], p[0][1], s.w / 2, 0, 7); ctx.fill(); return; }
+      ctx.beginPath(); ctx.moveTo(p[0][0], p[0][1]);
+      for (let i = 1; i < p.length - 1; i++){                 // smooth: curve through midpoints
+        ctx.quadraticCurveTo(p[i][0], p[i][1], (p[i][0] + p[i+1][0]) / 2, (p[i][1] + p[i+1][1]) / 2);
+      }
+      ctx.lineTo(p[p.length-1][0], p[p.length-1][1]); ctx.stroke();
+    }
+    function render(){
+      ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0, 0, ink.width, ink.height);
+      ctx.setTransform(ink.width / LW, 0, 0, ink.height / LH, 0, 0);
+      const live = ops.slice(0, pos);
+      let from = 0; live.forEach((o, i) => { if (o.clear) from = i + 1; });
+      if (img) img.classList.toggle('gone', from > 0);
+      live.slice(from).forEach(stroke);
+      if (cur) stroke(cur);
+      ctx.globalCompositeOperation = 'source-over';
+      undoB.disabled = pos === 0; redoB.disabled = pos === ops.length;
+    }
+
+    /* zoom and pan */
+    let z = { s: 1, x: 0, y: 0 };
+    const zoomB = document.getElementById('zoom'), zlev = document.getElementById('zlev');
+    function setZoom(s, x, y){
+      s = Math.min(4, Math.max(1, s));
+      x = Math.min(0, Math.max(W - W * s, x)); y = Math.min(0, Math.max(H - H * s, y));
+      z = { s, x, y };
+      layer.style.transform = `translate(${x}px,${y}px) scale(${s})`;
+      zoomB.hidden = s < 1.05;
+      zlev.textContent = Math.round(s * 100) + '%';
+      zoomB.setAttribute('aria-label', 'Zoomed to ' + Math.round(s * 100) + '%. Reset zoom');
+    }
+    zoomB.onclick = () => setZoom(1, 0, 0);
+    zoomB.addEventListener('pointerdown', e => e.stopPropagation());
+
+    const hint = document.getElementById('hint');
+    const hideHint = () => hint.classList.add('out');
+    setTimeout(hideHint, 4500);
+
+    const toLogical = (cx, cy) => { const r = box.getBoundingClientRect();
+      return [((cx - r.left - z.x) / z.s) * LW / W, ((cy - r.top - z.y) / z.s) * LH / H]; };
+    const ptrs = new Map(); let gest = null, blocked = false, owner = null;
+
+    box.addEventListener('pointerdown', e => {
+      box.setPointerCapture(e.pointerId);
+      ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+      if (ptrs.size === 1 && !blocked){
+        if (st.tool === 'fill') return;               // fill: selectable only in the prototype
+        owner = e.pointerId;
+        cur = { colour: st.colour, w: SIZES[st.size] / Math.sqrt(z.s) * (st.tool === 'eraser' ? 2 : 1), erase: st.tool === 'eraser', pts: [toLogical(e.clientX, e.clientY)] };
+        render();
+      } else if (ptrs.size === 2){
+        cur = null; owner = null; blocked = true; hideHint(); render();   // second finger: drop the stroke, no stray marks
+        const [a, b] = [...ptrs.values()], r = box.getBoundingClientRect();
+        gest = { d: Math.hypot(a[0]-b[0], a[1]-b[1]) || 1, mx: (a[0]+b[0])/2 - r.left, my: (a[1]+b[1])/2 - r.top, z: { ...z } };
+      }
+    });
+    box.addEventListener('pointermove', e => {
+      if (!ptrs.has(e.pointerId)) return;
+      ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+      if (gest && ptrs.size >= 2){
+        const [a, b] = [...ptrs.values()], r = box.getBoundingClientRect();
+        const s = Math.min(4, Math.max(1, gest.z.s * Math.hypot(a[0]-b[0], a[1]-b[1]) / gest.d));
+        const mx = (a[0]+b[0])/2 - r.left, my = (a[1]+b[1])/2 - r.top;
+        const px = (gest.mx - gest.z.x) / gest.z.s, py = (gest.my - gest.z.y) / gest.z.s;
+        setZoom(s, mx - px * s, my - py * s);
+      } else if (cur && e.pointerId === owner){
+        const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+        (evs.length ? evs : [e]).forEach(v => cur.pts.push(toLogical(v.clientX, v.clientY)));
+        render();
+      }
+    });
+    const end = e => {
+      if (!ptrs.has(e.pointerId)) return;
+      ptrs.delete(e.pointerId);
+      if (e.pointerId === owner && cur){ const s = cur; cur = null; owner = null; if (e.type === 'pointerup') push(s); else render(); }
+      if (ptrs.size < 2) gest = null;
+      if (ptrs.size === 0) blocked = false;
+    };
+    box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
+    // trackpad pinch (ctrl + wheel) zooms; plain wheel pans when zoomed
+    box.addEventListener('wheel', e => {
+      e.preventDefault(); hideHint();
+      const r = box.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+      if (e.ctrlKey){
+        const s = Math.min(4, Math.max(1, z.s * Math.exp(-e.deltaY / 100)));
+        const px = (mx - z.x) / z.s, py = (my - z.y) / z.s;
+        setZoom(s, mx - px * s, my - py * s);
+      } else setZoom(z.s, z.x - e.deltaX, z.y - e.deltaY);
+    }, { passive: false });
+    document.addEventListener('gesturestart', e => e.preventDefault());   // iOS Safari page zoom
+
+    size();
+    window.addEventListener('resize', () => { size(); setZoom(z.s, z.x, z.y); });
+    // ?draw&zoom shows the zoomed state without a pinch
+    if (q.has('zoom')){ hideHint(); setZoom(2, -W * 0.45, -H * 0.5); }
+    // ?draw&clear shows the clear confirmation
+    if (q.has('clear')) document.getElementById('clear').click();
+  }
+})();
+</script>
+</body></html>

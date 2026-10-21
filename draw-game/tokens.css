@@ -1,0 +1,277 @@
+/*
+  Pen Panic design tokens: "Rutat"
+  Extracted from design/moodboards/pen-panic-1.html. Every screen links this file; nothing
+  else defines colours, type or components.
+
+  The game happens on the back page of a maths notebook. One square is 12px and
+  everything snaps to it. Four materials, each with one meaning:
+    pencil       not yet: placeholders, disabled, secondary text
+    blue pen     it is there: text, outlines, icons
+    felt-tip     go: actions, anything coloured in
+    highlighter  look here: selected, guessed, you
+
+  Requires design/defs.js in each page: it injects the SVG filters (#wob, #wob2, #wob3)
+  that make the pen lines wobble, and the shared icon symbols (<use href="#i-…">).
+  Without it, everything still renders, with straight lines and no icons.
+*/
+
+@font-face{font-family:"Gochi Hand";font-style:normal;font-weight:400;font-display:swap;src:url(fonts/gochi-hand-400.woff2) format("woff2")}
+@font-face{font-family:"Atkinson Hyperlegible";font-style:normal;font-weight:400;font-display:swap;src:url(fonts/atkinson-hyperlegible-400.woff2) format("woff2")}
+@font-face{font-family:"Atkinson Hyperlegible";font-style:normal;font-weight:700;font-display:swap;src:url(fonts/atkinson-hyperlegible-700.woff2) format("woff2")}
+
+:root{
+  /* Paper and ink */
+  --table:#E6DAC3;        /* behind the notebook on wide screens */
+  --paper:#FBF6E9;        /* page background */
+  --scrap:#FFFDF7;        /* raised surfaces: cards, inputs, canvas */
+  --grid:#C9D7E6;         /* the squares */
+  --ink:#1C2E7A;          /* blue pen: all text, outlines, icons */
+  --pencil:#5E6270;       /* secondary text (5.6:1 on paper) */
+  --pencil-soft:#9499A5;  /* disabled and placeholder only, never body text */
+
+  /* Felt-tips and highlighter */
+  --tangerine:#FF9A3C;    /* primary action */
+  --tangerine-down:#F58220;
+  --yellow:#FFE55C;       /* highlighter: selected, you, letter hints */
+  --leaf:#35A853;         /* guessed it */
+  --leaf-wash:#BDEBB0;
+  --tomato:#E8473F;       /* timer warning, last ten seconds, errors */
+  --sky:#2BB5C9;
+  --pink:#FF7EB6;
+  --violet:#8A63D2;
+
+  /* Player colours, in seat order */
+  --p1:var(--tangerine); --p2:var(--sky); --p3:var(--pink); --p4:var(--leaf);
+  --p5:var(--violet); --p6:var(--tomato); --p7:var(--yellow); --p8:#A9744F;
+
+  /* The 14 felt-tips in the drawing kit, in swatch order (two rows of seven).
+     These are for what players draw, not for the interface. */
+  --d-black:#2A2A33; --d-grey:#8A8F99; --d-brown:#8B5A2B; --d-red:#E8473F;
+  --d-orange:#FF9A3C; --d-yellow:#FFE55C; --d-green:#35A853;
+  --d-white:#FFFFFF; --d-tan:#E2B98A; --d-pink:#FF7EB6; --d-violet:#8A63D2;
+  --d-blue:#2F57C9; --d-sky:#2BB5C9; --d-lime:#9BD86B;
+
+  /* Type */
+  --hand:"Gochi Hand","Chalkboard SE","Comic Sans MS",cursive;           /* display, numerals, buttons */
+  --read:"Atkinson Hyperlegible",Verdana,system-ui,sans-serif;           /* everything people read */
+
+  /* The grid */
+  --sq:12px;
+  --s1:12px; --s2:24px; --s3:36px; --s4:48px;
+  --tap:48px;             /* minimum touch target */
+  --col:430px;            /* the phone column */
+  --bottom-safe:env(safe-area-inset-bottom,0px);
+  --top-safe:env(safe-area-inset-top,0px);
+}
+
+/* Base */
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--table);-webkit-text-size-adjust:100%;overflow-x:clip}
+body{font:400 16px/24px var(--read);color:var(--ink);-webkit-font-smoothing:antialiased;overflow-x:clip}   /* clip, not hidden: hidden breaks position:sticky */
+ul,ol{list-style:none}
+a{color:inherit}
+button,input,select,textarea{font:inherit;color:inherit;background:none;border:0}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+svg{display:block}
+:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* App shell: one notebook page, full screen on a phone, a centred column on anything wider */
+.app{position:relative;isolation:isolate;display:flex;flex-direction:column;width:min(100%,var(--col));min-height:100vh;min-height:100dvh;margin:0 auto;
+  padding-top:var(--top-safe);
+  background-color:var(--paper);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:var(--sq) var(--sq)}
+.app.fixed{height:100vh;height:100dvh;overflow:hidden}   /* screens that must not scroll: the round */
+@media (min-width:460px){.app{box-shadow:0 0 0 1px rgba(28,46,122,.14),6px 0 0 rgba(28,46,122,.10)}}
+.app-top{display:flex;align-items:center;gap:var(--s1);min-height:var(--tap);padding:0 var(--s1)}
+.app-top .grow{flex:1;min-width:0}
+/* Top bar title: bold reading face, with an optional .cap line under it, on every screen */
+.app-top h1,.app-top .grow>b{display:block;font:700 16px/24px var(--read);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-top .grow>.cap{line-height:18px}
+.app-body{flex:1;min-height:0;padding:var(--s1)}
+.app.fixed .app-body{overflow:auto}
+/* The bottom third is where the thumb is: primary actions live here */
+.app-foot{position:sticky;bottom:0;display:flex;flex-direction:column;gap:var(--s1);padding:var(--s1) var(--s1) calc(var(--s1) + var(--bottom-safe));
+  background-color:var(--paper);box-shadow:inset 0 2px 0 var(--ink)}
+.stack{display:flex;flex-direction:column;gap:var(--s1)}
+.stack.wide{gap:var(--s2)}
+.row{display:flex;align-items:center;gap:var(--s1)}
+.row.between{justify-content:space-between}
+
+/* Type */
+.display{font:400 40px/48px var(--hand);letter-spacing:.5px}
+.title{font:400 26px/36px var(--hand)}
+.hand{font-family:var(--hand);font-weight:400}
+.lead{font-size:18px;line-height:24px}
+.cap{font-size:14px;line-height:24px;color:var(--pencil)}
+.cap b{color:var(--ink)}
+.muted{color:var(--pencil)}
+.pts{font:400 23px/24px var(--hand)}
+
+/* Materials */
+.m{mix-blend-mode:multiply}
+/* Highlighter swipe behind text */
+.hl{position:relative;display:inline-block}
+.hl::before{content:"";position:absolute;z-index:-1;inset:0 -8px 0 -6px;background:var(--yellow);mix-blend-mode:multiply;filter:url(#wob2);border-radius:2px 7px 3px 8px}
+/* Blue-pen box */
+.box{position:relative}
+.box::before{content:"";position:absolute;inset:0;z-index:-1;border:2px solid var(--ink);border-radius:2px;background:var(--scrap);filter:url(#wob);pointer-events:none}
+.box.clear::before{background:none}
+/* Hatched pen shadow under a box */
+.shadow::after{content:"";position:absolute;z-index:-1;inset:6px -6px -6px 6px;pointer-events:none;
+  background:repeating-linear-gradient(135deg,var(--ink) 0 1.2px,transparent 1.2px 4.6px);
+  clip-path:polygon(calc(100% - 6px) 0,100% 0,100% 100%,0 100%,0 calc(100% - 6px),calc(100% - 6px) calc(100% - 6px))}
+/* Felt-tip fill: set --c to any felt colour */
+.felt{position:relative}
+.felt::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:2px;
+  background-color:var(--c,var(--tangerine));
+  background-image:repeating-linear-gradient(97deg,rgba(255,255,255,0) 0 6px,rgba(255,255,255,.2) 6px 8px,rgba(255,255,255,0) 8px 15px);
+  mix-blend-mode:multiply;filter:url(#wob2)}
+
+/* Buttons: blue-pen box with a hatched shadow. Pressing pushes it onto its shadow. */
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:var(--tap);min-width:var(--tap);padding:0 var(--s2);
+  font:400 24px/48px var(--hand);letter-spacing:.4px;color:var(--ink);white-space:nowrap;text-decoration:none;cursor:pointer;user-select:none;-webkit-user-select:none}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;border:2.5px solid var(--ink);border-radius:2px;background:var(--scrap);filter:url(#wob)}
+.btn::after{content:"";position:absolute;z-index:-1;inset:6px -6px -6px 6px;
+  background:repeating-linear-gradient(135deg,var(--ink) 0 1.2px,transparent 1.2px 4.6px);
+  clip-path:polygon(calc(100% - 6px) 0,100% 0,100% 100%,0 100%,0 calc(100% - 6px),calc(100% - 6px) calc(100% - 6px))}
+.btn.primary::before{background-color:var(--tangerine);
+  background-image:repeating-linear-gradient(97deg,rgba(255,255,255,0) 0 6px,rgba(255,255,255,.22) 6px 8px,rgba(255,255,255,0) 8px 15px);
+  mix-blend-mode:multiply}
+.btn:active,.btn.is-pressed{top:6px;left:6px}
+.btn:active::after,.btn.is-pressed::after{display:none}
+.btn.primary:active::before,.btn.primary.is-pressed::before{background-color:var(--tangerine-down)}
+.btn:disabled,.btn.is-disabled{top:0;left:0;color:var(--pencil-soft);cursor:default;pointer-events:none}
+.btn:disabled::before,.btn.is-disabled::before{border:2px dashed var(--pencil-soft);background:none;mix-blend-mode:normal;filter:none}
+.btn:disabled::after,.btn.is-disabled::after{display:none}
+.btn.block{display:flex;width:calc(100% - 6px)}   /* leaves room for the shadow */
+.btn.sm{height:40px;padding:0 var(--s1);font-size:21px;line-height:40px}
+.btn.sm::after{inset:4px -4px -4px 4px;clip-path:polygon(calc(100% - 4px) 0,100% 0,100% 100%,0 100%,0 calc(100% - 4px),calc(100% - 4px) calc(100% - 4px))}
+/* Text-only action, still a full touch target */
+.link{display:inline-flex;align-items:center;gap:6px;min-height:var(--tap);padding:0 6px;font-weight:700;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:4px;cursor:pointer}
+/* Square icon button */
+.icon-btn{position:relative;display:inline-grid;place-items:center;width:var(--tap);height:var(--tap);flex:none;cursor:pointer;text-decoration:none}
+
+/* Text input: a pen box on scrap paper. 16px+ text so phones do not zoom in. */
+.inp{position:relative;display:flex;align-items:center;gap:var(--s1);height:var(--tap);padding:0 var(--s1)}
+.inp::before{content:"";position:absolute;inset:0;z-index:-1;border:2px solid var(--ink);border-radius:2px;background:var(--scrap);filter:url(#wob)}
+.inp input{flex:1;min-width:0;height:100%;font-size:17px;outline:none}
+.inp input::placeholder{color:var(--pencil-soft)}
+.inp:focus-within::before{border-width:3px}
+.field-label{display:block;font-weight:700;margin-bottom:6px}
+
+/* Numerals and codes: one character per square */
+.cells{display:inline-flex;box-shadow:0 0 0 1px var(--ink);vertical-align:top}
+.cells b{position:relative;width:24px;height:24px;font:400 23px/27px var(--hand);text-align:center;box-shadow:inset 0 0 0 1px var(--ink)}
+.cells.big b{width:36px;height:36px;font-size:35px;line-height:40px}
+.cells.warn b::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--tomato);opacity:.55;mix-blend-mode:multiply}
+
+/* Icons, drawn in pen: <svg class="ic"><use href="#i-undo"/></svg> */
+.ic{width:24px;height:24px;flex:none;fill:none;stroke:var(--ink);stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.ic .f{fill:var(--ink);stroke:none}
+.ic.tick{stroke:var(--leaf);stroke-width:4}
+
+/* Cards */
+.card{position:relative;padding:var(--s1) var(--s1) var(--s2)}
+.card h3{font:400 25px/36px var(--hand)}
+
+/* Settings controls */
+.set{display:flex;align-items:center;justify-content:space-between;gap:var(--s1);min-height:var(--tap);margin-top:var(--s1)}
+.lab{font-weight:700}
+.seg{position:relative;display:flex;min-height:var(--tap)}
+.seg>*{position:relative;flex:1;min-width:var(--tap);padding:0 11px;line-height:var(--tap);text-align:center;font-weight:400;cursor:pointer}
+.seg>*+*{box-shadow:inset 2px 0 0 var(--ink)}
+.seg>.on,.seg>[aria-pressed="true"]{font-weight:700}
+.seg>.on::before,.seg>[aria-pressed="true"]::before{content:"";position:absolute;inset:5px;z-index:-1;background:var(--yellow);mix-blend-mode:multiply;filter:url(#wob2)}
+.step{display:flex;align-items:center;gap:6px;height:var(--tap)}
+.step .pm{width:var(--tap);height:var(--tap);font:400 30px/48px var(--hand);text-align:center;cursor:pointer}
+.step .val{min-width:36px;text-align:center;font:400 24px/48px var(--hand)}
+.unit{color:var(--pencil)}
+.chk{display:flex;align-items:center;gap:8px;min-height:var(--tap);cursor:pointer}
+.cb{position:relative;flex:none;width:24px;height:24px;display:grid;place-items:center}
+.cb::before{content:"";position:absolute;inset:0;border:2px solid var(--ink);border-radius:2px;filter:url(#wob2)}
+.cb .ic{width:18px;height:18px;stroke-width:3;visibility:hidden}
+.chk.on .cb .ic,.chk[aria-checked="true"] .cb .ic,input:checked+.cb .ic{visibility:visible}
+.cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));column-gap:var(--s1)}
+
+/* Player rows: scoreboard, lobby, results */
+.board{position:relative}
+.prow{position:relative;display:flex;align-items:center;gap:var(--s1);min-height:var(--tap);padding:0 var(--s1)}
+.prow+.prow{box-shadow:inset 0 2px 0 var(--ink)}
+.prow .rank{width:18px;font:400 24px/48px var(--hand);text-align:center}
+.prow .who{flex:1;min-width:0;line-height:18px}
+.prow .who b{display:block;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prow .who small{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--pencil)}
+.prow .who small .ic{width:14px;height:14px}
+.prow.you::before{content:"";position:absolute;inset:4px 3px 3px 3px;z-index:-1;background:var(--yellow);mix-blend-mode:multiply;filter:url(#wob2)}
+.prow.away{color:var(--pencil)}
+/* Player colour dot: <i class="dot" style="--c:var(--p3)"></i> */
+.dot{position:relative;flex:none;width:24px;height:24px}
+.dot::before{content:"";position:absolute;inset:2px;border-radius:50%;background:var(--c,var(--p1));mix-blend-mode:multiply;filter:url(#wob2)}
+.dot::after{content:"";position:absolute;inset:2px;border-radius:50%;border:2px solid var(--ink);filter:url(#wob2)}
+.prow.away .dot::before{background:none;border:2px dashed var(--pencil-soft)}
+.prow.away .dot::after{display:none}
+
+/* Guess feed */
+.feed{display:flex;flex-direction:column;gap:2px}
+.feed .g{position:relative;display:flex;align-items:center;gap:6px;min-height:24px;padding-left:18px;font-size:15px;line-height:20px}
+.feed .g .pc{position:absolute;left:0;top:2px;bottom:2px;width:10px;background:var(--c,var(--p1));mix-blend-mode:multiply;filter:url(#wob2)}
+.feed .g b{font-weight:700}
+.feed .g.ok::before{content:"";position:absolute;inset:1px -6px 1px 12px;z-index:-1;background:var(--leaf-wash);mix-blend-mode:multiply;filter:url(#wob2);border-radius:2px 6px 3px 7px}
+.feed .g.ok .pts{margin-left:auto;padding-right:6px}
+.feed .g.sys{color:var(--pencil);font-style:italic}
+.feed .g.private{color:var(--pencil)}   /* chat among those who guessed */
+.feed .g .ic{width:18px;height:18px}
+
+/* The word: one underlined square per letter. Lowercase on purpose: Gochi Hand capital G reads as 6. */
+.word{display:flex;flex-wrap:wrap}
+.word b{position:relative;width:24px;height:24px;font:400 24px/25px var(--hand);text-align:center;text-transform:lowercase;
+  background:linear-gradient(var(--ink),var(--ink)) 3px 100%/18px 3px no-repeat}
+.word b.gap{background:none;width:12px}
+.word b.hint::before{content:"";position:absolute;inset:0 1px 3px 1px;z-index:-1;background:var(--yellow);mix-blend-mode:multiply;filter:url(#wob2)}
+
+/* Round header rows, shared by the drawing, guessing and rejoin screens.
+   The word and its caption sit side by side; a long word pushes the caption onto its own line. */
+.wordrow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;column-gap:var(--s1);min-height:var(--s3);padding:0 var(--s1)}
+.wordrow .word{flex:none;flex-wrap:nowrap;padding:6px 0}
+.wordrow .cap{line-height:18px}
+.tbarrow{padding:6px var(--s1) var(--s1)}
+
+/* Timer bar: one square per two seconds, coloured in as time passes */
+/* Always one row: the 40 squares share the width, so they are a little under 12px on a phone */
+.tbar{display:grid;grid-template-columns:repeat(var(--tbar-n,40),1fr);box-shadow:0 0 0 1px var(--ink)}
+.tbar i{height:12px;box-shadow:inset 0 0 0 .5px var(--grid)}
+.tbar i.used{background:var(--leaf);mix-blend-mode:multiply}
+.tbar i.late{background:var(--tomato);mix-blend-mode:multiply}
+
+/* Canvas: a sheet of scrap paper with a fainter grid */
+.canvas{position:relative;touch-action:none;aspect-ratio:4/3;width:100%;box-shadow:inset 0 2px 0 var(--ink),inset 0 -2px 0 var(--ink);
+  background-color:var(--scrap);
+  background-image:linear-gradient(rgba(201,215,230,.5) 1px,transparent 1px),linear-gradient(90deg,rgba(201,215,230,.5) 1px,transparent 1px);
+  background-size:var(--sq) var(--sq)}
+
+/* Drawing tools */
+.kit{display:flex;flex-direction:column;gap:var(--s1);padding:var(--s1)}
+.sws{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.sw{position:relative;height:36px;cursor:pointer}
+.sw::before{content:"";position:absolute;inset:6px 4px;background:var(--c);border-radius:2px;mix-blend-mode:multiply;filter:url(#wob2)}
+.sw.white::before{background:var(--scrap);box-shadow:inset 0 0 0 1.5px var(--ink)}
+.sw.on::after{content:"";position:absolute;inset:-2px 0;border:2.5px solid var(--ink);border-radius:50%;transform:rotate(-7deg);filter:url(#wob2)}
+.toolrow{display:flex;gap:6px}
+.tg{position:relative;display:flex;flex:1}
+.tool{position:relative;flex:1;min-width:36px;height:var(--tap);display:grid;place-items:center;cursor:pointer}
+.tool+.tool{box-shadow:inset 2px 0 0 var(--ink)}
+.tool.on::before{content:"";position:absolute;inset:5px;z-index:-1;background:var(--yellow);mix-blend-mode:multiply;filter:url(#wob2)}
+.tool:disabled .ic{stroke:var(--pencil-soft)}
+.tool:disabled .ic .f{fill:var(--pencil-soft)}
+
+/* Reaction chips */
+.reacts{display:flex;gap:6px}
+.react{position:relative;display:grid;place-items:center;width:var(--tap);height:40px;font-size:22px;cursor:pointer}
+
+/* Notice: a highlighted note pinned to the page */
+.notice{position:relative;padding:var(--s1);border-radius:2px}
+.notice::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--c,var(--yellow));mix-blend-mode:multiply;filter:url(#wob2);border-radius:2px 7px 3px 8px}
+.notice.ok{--c:var(--leaf-wash)}
+.notice.warn{--c:#F7B9B5}

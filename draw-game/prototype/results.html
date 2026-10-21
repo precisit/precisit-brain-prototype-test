@@ -1,0 +1,211 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pen Panic · Results</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+/* page-local: layout, plus x- components built from the shared materials */
+/* tokens.css sets overflow-x:hidden on body, which makes body a scroll container and stops the
+   sticky .app-foot from sticking. clip hides overflow without that side effect. */
+body{overflow-x:clip}
+.x-grow{flex:1;min-width:0}
+.x-gap-r{margin-right:6px}                       /* room for the last button's shadow */
+
+/* Turn reveal */
+.x-reveal{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:var(--s1)}
+.x-reveal .display{margin:0 var(--s1)}
+.x-why{margin-top:var(--s1);font-size:15px}
+.x-why .ic{display:inline-block;width:20px;height:20px;margin-right:4px;vertical-align:-5px}
+.x-drawing{display:flex;flex-direction:column;align-items:center;gap:6px;margin:var(--s1) 0 0}
+.x-frame{width:180px;padding:2px}
+.x-frame img{display:block;width:100%;aspect-ratio:4/3;height:auto}
+.x-drawing figcaption{display:flex;align-items:center;gap:6px;margin-top:6px}
+.x-drawing figcaption .ic{width:18px;height:18px}
+
+/* Points table: two right-hand columns, this turn and new total */
+.x-sec{margin-top:var(--s2)}
+.x-head{display:flex;gap:var(--s1);padding:0 var(--s1);font-size:13px;line-height:24px;color:var(--pencil)}
+.x-head .x-grow{padding-left:36px}
+.x-turn{flex:none;width:58px;text-align:right;white-space:nowrap}
+.x-tot{flex:none;width:72px;display:flex;justify-content:flex-end}
+.x-head .x-tot{display:block;text-align:right}
+.x-tboard .prow{gap:8px}                      /* two number columns need the room at 320px */
+.x-tboard .prow .who small{white-space:nowrap}
+.x-head{gap:8px}
+.x-head .x-grow{padding-left:32px}
+.prow .pts.muted{color:var(--pencil)}
+.x-drawer{display:flex;align-items:flex-start;gap:6px;margin-top:var(--s1);padding:0 var(--s1) 0 0}
+.x-drawer .ic{width:18px;height:18px;margin-top:3px}
+
+/* Next-turn countdown in the foot */
+.x-next{display:flex;align-items:center;justify-content:space-between;gap:var(--s1)}
+.x-next .title{min-width:0}
+.x-count{display:flex;align-items:center;gap:6px;min-height:var(--tap);padding:0 6px;cursor:pointer}
+.x-count .cap{white-space:nowrap}
+
+/* Final: podium of felt-tip columns standing on the grid */
+.x-win{text-align:center;padding-top:var(--s1)}
+.x-podium{display:flex;justify-content:center;align-items:flex-end;gap:var(--s1);margin:var(--s2) 0 0}
+.x-place{display:flex;flex-direction:column;align-items:center;width:84px;min-width:0}
+.x-place .x-name{display:flex;align-items:center;gap:4px;max-width:100%;font-weight:700}
+.x-place .x-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.x-place .x-you{font-size:13px;line-height:18px;color:var(--pencil)}
+.x-place .pts{margin:4px 0 6px}
+.x-place .ic.x-crown{width:28px;height:28px;margin-bottom:2px}
+.x-col{position:relative;width:100%;display:flex;justify-content:center;padding-top:6px;font:400 40px/48px var(--hand)}
+.x-col::after{content:"";position:absolute;inset:0;border:2px solid var(--ink);border-bottom:0;border-radius:2px 2px 0 0;filter:url(#wob);pointer-events:none}
+.x-col.h1{height:120px}.x-col.h2{height:84px}.x-col.h3{height:60px}
+.x-ground{height:2px;background:var(--ink);margin:0 var(--s1) var(--s1)}
+
+/* Today's masterpieces */
+.x-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s1);margin-right:6px}
+.x-strip figure{display:flex;flex-direction:column;gap:6px;min-width:0}
+.x-strip .box{padding:2px}
+.x-strip img{display:block;width:100%;aspect-ratio:4/3;height:auto}
+.x-strip figcaption{font-size:13px;line-height:18px;color:var(--pencil);overflow-wrap:anywhere}
+.x-strip figcaption b{display:block;color:var(--ink)}
+</style>
+</head><body>
+<script src="../defs.js"></script>
+<script src="fake-data.js"></script>
+<div class="app">
+  <header class="app-top">
+    <a class="icon-btn" href="index.html" aria-label="All screens"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></a>
+    <div class="grow"><h1 id="topTitle">Turn 3 of 8</h1><div class="cap" id="topSub">End of turn</div></div>
+  </header>
+  <main class="app-body" id="body"></main>
+  <footer class="app-foot" id="foot"></footer>
+</div>
+<script>
+(function () {
+  var D = window.PP, you = D.you;
+  var q = new URLSearchParams(location.search);
+  var state = q.has("final") ? "final" : (q.get("turn") === "4" ? 4 : 3);
+  var colour = {}; D.players.forEach(function (p) { colour[p.name] = p.colour; });
+  var ic = function (id, cls) { return '<svg class="ic' + (cls ? " " + cls : "") + '" aria-hidden="true"><use href="#i-' + id + '"/></svg>'; };
+  var dot = function (n) { return '<i class="dot" style="--c:var(' + colour[n] + ')"></i>'; };
+  var cells = function (n) { return '<span class="cells" aria-label="' + n + '">' + String(n).split("").map(function (d) { return "<b>" + d + "</b>"; }).join("") + "</span>"; };
+  var ord = function (i) { return i + (i === 1 ? "st" : i === 2 ? "nd" : i === 3 ? "rd" : "th"); };
+  var list = function (a) { return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; };
+  var body = document.getElementById("body"), foot = document.getElementById("foot");
+
+  if (state === "final") { renderFinal(); return; }
+
+  /* ---------- One turn's result ---------- */
+  var T = state === 3
+    ? { info: D.turn3, pts: D.scores.turn3, tot: D.scores.afterTurn3, img: "drawings/hedgehog.svg", next: "Jonas", href: "guesser.html" }
+    : { info: D.turn4, pts: D.scores.turn4, tot: D.scores.afterTurn4, img: "drawings/lighthouse.svg", next: "Farah", href: "rejoin.html" };
+  var drawer = T.info.drawer;
+  var names = Object.keys(T.pts);
+  // Guess order: the data lists guessers in the order they got it
+  var order = {}, k = 0;
+  names.forEach(function (n) { if (n !== drawer && T.pts[n] > 0) order[n] = ++k; });
+  var missed = names.filter(function (n) { return n !== drawer && T.pts[n] === 0; });
+  // Sorted by this turn's points; ties keep data order
+  var rows = names.slice().sort(function (a, b) { return T.pts[b] - T.pts[a]; });
+
+  document.getElementById("topTitle").textContent = "Turn " + T.info.number + " of " + D.room.turns;
+  document.title = "Pen Panic · Turn " + T.info.number + " result";
+
+  body.innerHTML =
+    '<section class="x-reveal" aria-label="The word">' +
+      '<p class="lead">The word was</p>' +
+      '<p class="display"><span class="hl">' + T.info.word + '</span></p>' +
+      '<p class="x-why">' + ic("clock") + '<span><b>Time’s up.</b> ' + list(missed) + ' didn’t guess it.</span></p>' +
+    '</section>' +
+    '<figure class="x-drawing">' +
+      '<div class="box shadow x-frame"><img src="' + T.img + '" alt="' + drawer + '’s drawing of a ' + T.info.word + '"></div>' +
+      '<figcaption class="cap">' + ic("pen") + '<span>drawn by <b>' + (drawer === you ? "you" : drawer) + '</b></span></figcaption>' +
+    '</figure>' +
+    '<section class="x-sec" aria-labelledby="ptsH">' +
+      '<h2 class="title" id="ptsH">Points this turn</h2>' +
+      '<div class="x-head" aria-hidden="true"><span class="x-grow">player</span><span class="x-turn">this turn</span><span class="x-tot">total</span></div>' +
+      '<ol class="board box x-tboard">' + rows.map(function (n) {
+        var p = T.pts[n], sub, pts;
+        if (n === drawer) { sub = ic("pen") + "drew"; pts = '<span class="pts x-turn">+' + p + "</span>"; }
+        else if (p > 0) { sub = ic("tick") + "guessed " + ord(order[n]); pts = '<span class="pts x-turn">+' + p + "</span>"; }
+        else { sub = "didn’t guess"; pts = '<span class="pts muted x-turn">missed</span>'; }
+        return '<li class="prow' + (n === you ? " you" : "") + '">' + dot(n) +
+          '<span class="who"><b>' + n + "</b><small>" + (n === you ? "you · " : "") + sub + "</small></span>" +
+          pts + '<span class="x-tot">' + cells(T.tot[n]) + "</span></li>";
+      }).join("") + "</ol>" +
+      '<p class="cap x-drawer">' + ic("pen") + '<span><b>' + drawer + ' drew: +' + T.pts[drawer] + "</b>, the average of everyone’s guess points.</span></p>" +
+    "</section>";
+
+  foot.innerHTML =
+    '<div class="x-next">' +
+      '<p class="title">Next: ' + T.next + ' draws</p>' +
+      '<button type="button" class="x-count" id="count" aria-label="Pause countdown">' +
+        '<span class="cap" id="countLabel">in</span><span class="cells big" aria-hidden="true"><b id="countNum">5</b></span></button>' +
+    "</div>" +
+    '<a class="btn primary block" href="' + T.href + '">Next turn' + ic("next") + "</a>" +
+    '<p class="sr-only" aria-live="polite" id="countLive"></p>';
+
+  // Countdown: waits a moment so the screen can be read, then 5..0 and moves on. Tap to pause.
+  var left = 5, timer = null, paused = false;
+  var num = document.getElementById("countNum"), lab = document.getElementById("countLabel"), btn = document.getElementById("count");
+  function tick() {
+    left--; num.textContent = left;
+    if (left <= 0) { clearInterval(timer); location.href = T.href; }
+  }
+  function start() { timer = setInterval(tick, 1000); }
+  var delay = setTimeout(start, 2000);
+  btn.addEventListener("click", function () {
+    paused = !paused;
+    if (paused) { clearTimeout(delay); clearInterval(timer); lab.textContent = "paused"; btn.setAttribute("aria-label", "Resume countdown"); }
+    else { lab.textContent = "in"; btn.setAttribute("aria-label", "Pause countdown"); start(); }
+    document.getElementById("countLive").textContent = paused ? "Countdown paused" : "Countdown running";
+  });
+
+  /* ---------- Final scoreboard ---------- */
+  function renderFinal() {
+    var F = D.scores.final;
+    var all = Object.keys(F).sort(function (a, b) { return F[b] - F[a]; });
+    var place = all.indexOf(you) + 1;
+    document.getElementById("topTitle").textContent = "Final scores";
+    document.getElementById("topSub").textContent = "After " + D.room.turns + " turns";
+    document.title = "Pen Panic · Final scores";
+
+    function podium(n, i) {
+      var me = n === you;
+      return '<li class="x-place">' +
+        (i === 1 ? ic("crown", "x-crown") : "") +
+        '<span class="x-name">' + dot(n) + '<span' + (me ? ' class="hl"' : "") + ">" + n + "</span></span>" +
+        (me ? '<span class="x-you">you</span>' : "") +
+        '<span class="pts">' + F[n] + "</span>" +
+        '<span class="x-col felt h' + i + '" style="--c:var(' + colour[n] + ')" aria-label="place ' + i + '">' + i + "</span></li>";
+    }
+    var drawings = [
+      { img: "drawings/hedgehog.svg", word: "hedgehog", by: D.turn3.drawer },
+      { img: "drawings/lighthouse.svg", word: "lighthouse", by: D.turn4.drawer },
+      { img: "drawings/kettle.svg", word: "kettle", by: D.turn5.drawer }
+    ];
+
+    body.innerHTML =
+      '<section class="x-win">' +
+        '<p class="display"><span class="hl">' + all[0] + " wins!</span></p>" +
+        '<p class="cap">After ' + D.room.turns + " turns. You came <b>" + ord(place) + "</b> with <b>" + F[you] + "</b>.</p>" +
+      "</section>" +
+      '<ol class="x-podium" aria-label="Top three">' + podium(all[1], 2) + podium(all[0], 1) + podium(all[2], 3) + "</ol>" +
+      '<div class="x-ground" aria-hidden="true"></div>' +
+      '<ol class="board box" aria-label="Places 4 to ' + all.length + '">' + all.slice(3).map(function (n, i) {
+        return '<li class="prow' + (n === you ? " you" : "") + '"><span class="rank">' + (i + 4) + "</span>" + dot(n) +
+          '<span class="who"><b>' + n + "</b>" + (n === you ? "<small>you</small>" : "") + "</span>" + cells(F[n]) + "</li>";
+      }).join("") + "</ol>" +
+      '<section class="x-sec" aria-labelledby="artH">' +
+        '<h2 class="title" id="artH">Today’s masterpieces</h2>' +
+        '<div class="x-strip">' + drawings.map(function (d) {
+          return '<figure><div class="box"><img src="' + d.img + '" alt="' + d.by + "’s " + d.word + '"></div>' +
+            "<figcaption><b>" + d.word + "</b>by " + d.by + "</figcaption></figure>";
+        }).join("") + "</div>" +
+      "</section>";
+
+    foot.innerHTML =
+      '<p class="cap">Same room, same people.</p>' +
+      '<div class="row">' +
+        '<a class="btn" href="landing.html">Leave</a>' +
+        '<a class="btn primary x-grow x-gap-r" href="lobby.html">' + ic("play") + "Play again</a>" +
+      "</div>";
+  }
+})();
+</script>
+</body></html>

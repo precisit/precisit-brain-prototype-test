@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <!-- Turn 5, drawn by Farah, in progress when Milla comes back. -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M142 208 C182 202 230 202 266 208" stroke="#2BB5C9" stroke-width="30" opacity=".7"/>
+    <path d="M131 231 C120 181 141 141 201 139 C261 137 283 181 273 231 Z" stroke="#2A2A33" stroke-width="5"/>
+    <path d="M118 233 L286 232" stroke="#2A2A33" stroke-width="5"/>
+    <path d="M168 140 C174 123 226 122 232 139" stroke="#2A2A33" stroke-width="5"/>
+    <circle cx="200" cy="118" r="7" stroke="#2A2A33" stroke-width="5"/>
+    <path d="M150 146 C148 98 252 96 254 146" stroke="#2A2A33" stroke-width="6"/>
+    <path d="M272 198 L320 160 L328 170 L277 218" stroke="#2A2A33" stroke-width="5"/>
+    <path d="M326 150 c-10 -12 10 -20 0 -34 c-10 -12 10 -20 0 -32" stroke="#8A8F99" stroke-width="4"/>
+  </g>
+</svg>

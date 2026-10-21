@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <!-- Turn 4, drawn by Jonas, half finished: one side of the light beams and half the sea. -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M184 162 C202 159 220 159 238 162" stroke="#E8473F" stroke-width="18"/>
+    <path d="M177 214 C200 211 222 211 245 214" stroke="#E8473F" stroke-width="18"/>
+    <path d="M168 252 L187 112 L233 111 L252 252" stroke="#2A2A33" stroke-width="5"/>
+    <path d="M197 97 C206 95 214 95 223 97" stroke="#FFE55C" stroke-width="16"/>
+    <path d="M187 112 L192 82 L228 81 L233 111" stroke="#2A2A33" stroke-width="5"/>
+    <path d="M184 82 L209 59 L236 81 Z" stroke="#2A2A33" stroke-width="5"/>
+    <path d="M242 88 L332 58 M243 100 L338 112" stroke="#FFE55C" stroke-width="7"/>
+    <path d="M150 254 C158 236 178 236 188 253 M236 253 C244 240 262 240 270 254" stroke="#8A8F99" stroke-width="6"/>
+    <path d="M24 266 c20 -14 40 14 60 0 s40 14 60 0 s40 14 60 0" stroke="#2F57C9" stroke-width="6"/>
+  </g>
+</svg>
