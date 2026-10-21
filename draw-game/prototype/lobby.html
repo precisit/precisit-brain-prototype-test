@@ -1,0 +1,342 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pen Panic · Lobby</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+/* page-local: layout, plus three small x- components built from the shared materials */
+.set{flex-wrap:wrap}
+.set>.seg,.set>.step{margin-left:auto}
+.set .sub{display:block;font-size:14px;line-height:18px;color:var(--pencil);font-weight:400}
+.cats{grid-template-columns:repeat(2,minmax(0,1fr))}
+.cats .chk{line-height:20px}
+.set .seg>*{flex:1 0 auto}
+.cats.off{color:var(--pencil)}
+.cats.off .cb::before{border-color:var(--pencil)}
+/* checkbox: a real input, the .cb box coloured in with felt-tip when ticked */
+.chk input:checked+.cb::before{background-color:var(--tangerine);mix-blend-mode:multiply}
+.chk input:focus-visible+.cb{outline:3px solid var(--sky);outline-offset:2px}
+.step .pm{position:relative}
+.step .pm:disabled{color:var(--pencil-soft);cursor:default}
+.step .pm:disabled::before{border:2px dashed var(--pencil-soft);background:none;filter:none}
+.x-num{display:flex;justify-content:center;width:108px}
+.headrow{display:flex;align-items:baseline;justify-content:space-between;gap:var(--s1);flex-wrap:wrap;margin-top:var(--s1)}
+
+/* share block */
+.code-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px var(--s1);margin-top:6px}
+.link-line{display:flex;align-items:center;gap:8px;margin-top:var(--s1);font-weight:700;overflow-wrap:anywhere}
+.share-btns{display:flex;gap:var(--s1);margin-top:var(--s1);padding-right:6px}
+.share-btns .btn{flex:1 1 auto;padding:0 var(--s1)}
+.copied{display:flex;align-items:center;gap:6px;min-height:24px;margin-top:6px}
+.copied[hidden]{display:flex;visibility:hidden}
+
+/* player rows */
+.prow .icon-btn{margin-right:-12px}
+.prow.x-confirm{flex-wrap:wrap;column-gap:var(--s1);row-gap:0;padding-top:6px;padding-bottom:6px}
+.prow.x-confirm .btn{padding:0 var(--s1)}
+.prow.x-confirm .who{flex:1 1 120px}
+.prow.x-confirm .acts{display:flex;align-items:center;gap:var(--s1);margin-left:auto;padding-right:6px}
+
+/* x-more: a full-width disclosure row */
+.x-more{width:100%;text-align:left;cursor:pointer}
+.x-more .ic{transition:transform .15s}
+.x-more[aria-expanded="true"] .ic{transform:rotate(90deg)}
+/* x-ta: a multi-line text input, the same pen box as .inp */
+.x-ta{position:relative;display:block}
+.x-ta::before{content:"";position:absolute;inset:0;z-index:-1;border:2px solid var(--ink);border-radius:2px;background:var(--scrap);filter:url(#wob);pointer-events:none}
+.x-ta:focus-within::before{border-width:3px}
+.x-ta textarea{display:block;width:100%;min-height:96px;padding:var(--s1);font-size:17px;line-height:24px;resize:vertical;outline:none}
+.x-ta textarea::placeholder{color:var(--pencil-soft)}
+
+/* read-only summary for players */
+.sum{margin-top:var(--s1)}
+.sum div{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s1);padding:var(--s1) 0 6px}
+.sum div+div{box-shadow:inset 0 2px 0 var(--grid)}
+.sum dt{font-weight:700;flex:none}
+.sum dd{text-align:right;min-width:0}
+
+/* foot */
+.foot-cap{text-align:center}
+.waiting{display:flex;align-items:center;justify-content:center;gap:var(--s1);min-height:var(--tap);font:400 24px/30px var(--hand);text-align:center}
+.foot-links{display:flex;justify-content:center}
+/* x-scribble: a pen that keeps doodling while you wait */
+.x-scribble{position:relative;width:60px;height:36px;flex:none}
+.x-scribble svg{position:absolute}
+.x-scribble .line{left:0;top:6px;width:60px;height:30px;fill:none;stroke:var(--ink);stroke-width:2.2;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100;animation:x-draw 2.4s ease-in-out infinite}
+.x-scribble .ic{left:0;top:0;animation:x-pen 2.4s ease-in-out infinite}
+@keyframes x-draw{0%{stroke-dashoffset:100;opacity:1}70%{stroke-dashoffset:0;opacity:1}90%{stroke-dashoffset:0;opacity:0}100%{stroke-dashoffset:100;opacity:0}}
+@keyframes x-pen{0%{transform:translate(-6px,6px) rotate(-6deg)}20%{transform:translate(8px,-2px) rotate(4deg)}40%{transform:translate(18px,8px) rotate(-4deg)}55%{transform:translate(28px,0) rotate(5deg)}70%{transform:translate(38px,6px) rotate(0)}90%,100%{transform:translate(-6px,6px) rotate(-6deg)}}
+@media (prefers-reduced-motion:reduce){.x-scribble .line,.x-scribble .ic{animation:none}.x-scribble .line{stroke-dashoffset:0}}
+[hidden]{display:none!important}
+</style>
+</head><body>
+<script src="../defs.js"></script>
+<script src="fake-data.js"></script>
+<div class="app">
+  <header class="app-top">
+    <a class="icon-btn" href="index.html" aria-label="All screens"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></a>
+    <div class="grow"><h1>Lobby</h1><div class="cap">Room HJ4K7Q</div></div>
+  </header>
+
+  <main class="app-body stack wide">
+    <!-- Share: anyone can invite -->
+    <section class="card box shadow" aria-labelledby="inviteH">
+      <h3 id="inviteH">Invite friends</h3>
+      <div class="code-row">
+        <span class="lab">Room code</span>
+        <span class="cells big" id="code" role="img"></span>
+      </div>
+      <p class="link-line"><svg class="ic" aria-hidden="true"><use href="#i-link"/></svg><span id="link"></span></p>
+      <div class="share-btns">
+        <button class="btn" type="button" id="copyBtn"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg>Copy link</button>
+        <button class="btn" type="button" id="shareBtn"><svg class="ic" aria-hidden="true"><use href="#i-share"/></svg>Share</button>
+      </div>
+      <p class="copied cap" id="copied" role="status" aria-live="polite"><svg class="ic tick" aria-hidden="true"><use href="#i-tick"/></svg><b>Copied</b>&nbsp;Paste it anywhere.</p>
+    </section>
+
+    <!-- Players -->
+    <section aria-labelledby="playersH" class="stack">
+      <h2 class="title row" id="playersH"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg><span id="count"></span></h2>
+      <ul class="board box shadow" id="players"></ul>
+      <p class="cap" id="removedNote" role="status" aria-live="polite"></p>
+    </section>
+
+    <!-- Host: settings controls -->
+    <section class="card box shadow" id="settings" aria-labelledby="setH">
+      <h3 id="setH">Game settings</h3>
+
+      <div class="set">
+        <span class="lab" id="langL">Word language</span>
+        <span class="seg box" role="group" aria-labelledby="langL" id="lang"></span>
+      </div>
+
+      <div class="headrow">
+        <span class="lab" id="catL">Categories</span>
+        <span class="cap" id="wordsInPlay"></span>
+      </div>
+      <div class="cats" id="cats" role="group" aria-labelledby="catL"></div>
+
+      <div class="set">
+        <span class="lab" id="diffL">Difficulty</span>
+        <span class="seg box" role="group" aria-labelledby="diffL" id="diff"></span>
+      </div>
+
+      <div class="set">
+        <span><span class="lab" id="timeL">Draw time</span><span class="sub">seconds</span></span>
+        <span class="step" role="group" aria-labelledby="timeL">
+          <button class="pm box" type="button" id="timeDown" aria-label="10 seconds less">&minus;</button>
+          <span class="x-num"><span class="cells big" id="timeVal" aria-live="polite"></span></span>
+          <button class="pm box" type="button" id="timeUp" aria-label="10 seconds more">+</button>
+        </span>
+      </div>
+
+      <div class="set">
+        <span><span class="lab" id="turnsL">Turns</span><span class="sub">1 to 30</span></span>
+        <span class="step" role="group" aria-labelledby="turnsL">
+          <button class="pm box" type="button" id="turnsDown" aria-label="One turn less">&minus;</button>
+          <span class="x-num"><span class="cells big" id="turnsVal" aria-live="polite"></span></span>
+          <button class="pm box" type="button" id="turnsUp" aria-label="One turn more">+</button>
+        </span>
+      </div>
+
+      <button class="set x-more" type="button" id="moreBtn" aria-expanded="false" aria-controls="custom">
+        <span><span class="lab">Add your own words</span><span class="sub" id="customSum">Any language</span></span>
+        <svg class="ic" aria-hidden="true"><use href="#i-next"/></svg>
+      </button>
+      <div id="custom" class="stack" hidden>
+        <label class="field-label" for="customWords" style="margin:0">Your words</label>
+        <span class="x-ta"><textarea id="customWords" rows="4" placeholder="rubber duck, moustache, Olle's bike" aria-describedby="customHelp"></textarea></span>
+        <p class="cap" id="customHelp">Separate with commas or new lines. Any language. Guesses must match how you wrote them.</p>
+        <label class="chk"><input class="sr-only" type="checkbox" id="onlyMine"><i class="cb box"><svg class="ic" aria-hidden="true"><use href="#i-tick"/></svg></i>Use only my words</label>
+      </div>
+    </section>
+
+    <!-- Player: read-only summary -->
+    <section class="card box shadow" id="summary" aria-labelledby="sumH" hidden>
+      <h3 id="sumH">Game settings</h3>
+      <p class="cap">Milla is setting up the game.</p>
+      <dl class="sum" id="sumList"></dl>
+    </section>
+  </main>
+
+  <footer class="app-foot">
+    <div id="hostFoot" class="stack">
+      <p class="cap foot-cap" id="estimate"></p>
+      <a class="btn primary block" href="drawer.html" id="startBtn"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg>Start game</a>
+    </div>
+    <div id="playerFoot" hidden>
+      <p class="waiting" role="status">
+        <span class="x-scribble" aria-hidden="true">
+          <svg class="line" viewBox="0 0 60 30"><path pathLength="100" d="M2 20c4-8 8-10 10-4s4 9 8 2 6-12 10-6 3 10 8 6 5-11 9-7 4 8 11 3"/></svg>
+          <svg class="ic"><use href="#i-pen"/></svg>
+        </span>
+        <span>Waiting for Milla to start…</span>
+      </p>
+      <div class="foot-links"><a class="link" href="landing.html">Leave room</a></div>
+    </div>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var R = PP.room;
+  var asPlayer = new URLSearchParams(location.search).get("as") === "player";
+  var me = asPlayer ? "Jonas" : PP.you;
+  var host = PP.players.filter(function(p){ return p.host; })[0].name;
+  var players = PP.players.slice();
+  var $ = function(id){ return document.getElementById(id); };
+  var esc = function(s){ return String(s).replace(/[&<>"']/g, function(c){ return "&#" + c.charCodeAt(0) + ";"; }); };
+  var cells = function(v){ return String(v).split("").map(function(c){ return "<b>" + esc(c) + "</b>"; }).join(""); };
+
+  var state = {
+    lang: R.wordLanguage, cats: R.categories.slice(), diff: R.difficulty,
+    time: R.drawSeconds, turns: R.turns, custom: R.customWords, onlyMine: false
+  };
+
+  /* Share block */
+  $("code").innerHTML = cells(R.code);
+  $("code").setAttribute("aria-label", "Room code " + R.code.split("").join(" "));
+  $("link").textContent = R.link;
+  var copiedTimer;
+  function showCopied(){
+    $("copied").hidden = false;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(function(){ $("copied").hidden = true; }, 2200);
+  }
+  $("copied").hidden = true;
+  function copyLink(){
+    try { if (navigator.clipboard) navigator.clipboard.writeText("https://" + R.link).catch(function(){}); } catch(e){}
+    showCopied();
+  }
+  $("copyBtn").addEventListener("click", copyLink);
+  $("shareBtn").addEventListener("click", function(){
+    if (navigator.share) {
+      navigator.share({ title: "Pen Panic", text: "Come draw with us! Room " + R.code, url: "https://" + R.link }).catch(function(){});
+    } else copyLink();
+  });
+
+  /* Players */
+  var confirming = null;
+  function renderPlayers(){
+    $("count").textContent = players.length + " of " + R.maxPlayers + " players";
+    $("players").innerHTML = players.map(function(p){
+      var you = p.name === me;
+      if (confirming === p.name) {
+        return '<li class="prow x-confirm">' +
+          '<span class="who"><b>Remove ' + esc(p.name) + '?</b></span>' +
+          '<span class="acts"><button class="btn" type="button" data-remove="' + esc(p.name) + '">Remove</button>' +
+          '<button class="link" type="button" data-keep>Keep</button></span></li>';
+      }
+      var tags = [];
+      if (p.host) tags.push('<svg class="ic" aria-hidden="true"><use href="#i-crown"/></svg>host');
+      if (you) tags.push("you");
+      return '<li class="prow' + (you ? " you" : "") + '">' +
+        '<i class="dot" style="--c:var(' + p.colour + ')"></i>' +
+        '<span class="who"><b>' + esc(p.name) + '</b>' + (tags.length ? '<small>' + tags.join(" · ") + '</small>' : "") + '</span>' +
+        (!asPlayer && !you ? '<button class="icon-btn" type="button" data-ask="' + esc(p.name) + '" aria-label="Remove ' + esc(p.name) + '"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>' : "") +
+        '</li>';
+    }).join("");
+  }
+  $("players").addEventListener("click", function(e){
+    var b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.ask) { confirming = b.dataset.ask; renderPlayers(); $("players").querySelector("[data-remove]").focus(); }
+    else if (b.dataset.remove) {
+      var name = b.dataset.remove;
+      players = players.filter(function(p){ return p.name !== name; });
+      confirming = null; renderPlayers(); update();
+      $("removedNote").textContent = name + " was removed from the room.";
+    }
+    else if (b.hasAttribute("data-keep")) {
+      var keep = confirming; confirming = null; renderPlayers();
+      var back = $("players").querySelector('[data-ask="' + keep + '"]'); if (back) back.focus();
+    }
+  });
+
+  /* Settings controls */
+  function seg(el, options, key){
+    el.innerHTML = options.map(function(o){
+      return '<button type="button" aria-pressed="' + (state[key] === o) + '">' + esc(o) + '</button>';
+    }).join("");
+    el.addEventListener("click", function(e){
+      var b = e.target.closest("button"); if (!b) return;
+      state[key] = b.textContent;
+      el.querySelectorAll("button").forEach(function(x){ x.setAttribute("aria-pressed", x === b); });
+      update();
+    });
+  }
+  seg($("lang"), ["English", "Svenska"], "lang");
+  seg($("diff"), ["Easy", "Medium", "Hard"], "diff");
+
+  $("cats").innerHTML = R.allCategories.map(function(c, i){
+    return '<label class="chk"><input class="sr-only" type="checkbox" value="' + esc(c) + '"' + (state.cats.indexOf(c) > -1 ? " checked" : "") + '>' +
+      '<i class="cb box"><svg class="ic" aria-hidden="true"><use href="#i-tick"/></svg></i>' + esc(c) + '</label>';
+  }).join("");
+  $("cats").addEventListener("change", function(){
+    state.cats = [].slice.call($("cats").querySelectorAll("input:checked")).map(function(i){ return i.value; });
+    update();
+  });
+
+  function stepper(down, up, key, min, max, by){
+    $(down).addEventListener("click", function(){ state[key] = Math.max(min, state[key] - by); update(); });
+    $(up).addEventListener("click", function(){ state[key] = Math.min(max, state[key] + by); update(); });
+  }
+  stepper("timeDown", "timeUp", "time", 30, 180, 10);
+  stepper("turnsDown", "turnsUp", "turns", 1, 30, 1);
+
+  $("moreBtn").addEventListener("click", function(){
+    var open = this.getAttribute("aria-expanded") !== "true";
+    this.setAttribute("aria-expanded", open);
+    $("custom").hidden = !open;
+    if (open) $("customWords").focus();
+  });
+  $("customWords").addEventListener("input", function(){ state.custom = this.value; update(); });
+  $("onlyMine").addEventListener("change", function(){ state.onlyMine = this.checked; update(); });
+
+  function customList(){
+    var seen = {};
+    return state.custom.split(/[,\n]/).map(function(w){ return w.trim(); }).filter(function(w){
+      var k = w.toLowerCase(); if (!w || seen[k]) return false; seen[k] = true; return true;
+    });
+  }
+  function plural(n, one, many){ return n + " " + (n === 1 ? one : many); }
+
+  function update(){
+    var mine = customList().length;
+    var packs = state.onlyMine ? 0 : state.cats.length * 10;
+    var total = packs + mine;
+    $("wordsInPlay").innerHTML = total ? "<b>" + plural(total, "word", "words") + "</b> in play" : "<b>No words yet</b>";
+    $("cats").classList.toggle("off", state.onlyMine);
+    $("customSum").textContent = mine ? plural(mine, "word", "words") + (state.onlyMine ? ", used alone" : ", mixed in") : "Any language";
+
+    $("timeVal").innerHTML = cells(state.time);
+    $("turnsVal").innerHTML = cells(state.turns);
+    $("timeDown").disabled = state.time <= 30; $("timeUp").disabled = state.time >= 180;
+    $("turnsDown").disabled = state.turns <= 1; $("turnsUp").disabled = state.turns >= 30;
+
+    var mins = Math.max(1, Math.round(state.turns * (state.time + 15) / 60));
+    $("estimate").innerHTML = "<b>" + plural(players.length, "player", "players") + "</b> · about " + plural(mins, "minute", "minutes");
+    var start = $("startBtn");
+    start.classList.toggle("is-disabled", !total);
+    if (!total) { start.setAttribute("aria-disabled", "true"); start.removeAttribute("href"); $("estimate").innerHTML = "<b>Pick a category or add your own words</b>"; }
+    else { start.removeAttribute("aria-disabled"); start.setAttribute("href", "drawer.html"); }
+  }
+
+  /* Player view: read-only summary */
+  if (asPlayer) {
+    $("settings").hidden = true; $("summary").hidden = false;
+    $("hostFoot").hidden = true; $("playerFoot").hidden = false;
+    var rows = [
+      ["Word language", R.wordLanguage],
+      ["Categories", R.categories.join(", ")],
+      ["Difficulty", R.difficulty],
+      ["Draw time", R.drawSeconds + " seconds"],
+      ["Turns", R.turns],
+      ["In play", (R.customWords ? "" : R.categories.length * 10 + " words")]
+    ];
+    $("sumList").innerHTML = rows.map(function(r){ return "<div><dt>" + r[0] + "</dt><dd>" + esc(r[1]) + "</dd></div>"; }).join("");
+  }
+
+  renderPlayers();
+  update();
+})();
+</script>
+</body></html>

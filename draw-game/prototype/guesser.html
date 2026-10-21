@@ -1,0 +1,207 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pen Panic · Guessing</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>/* page-local: layout only */
+.x-timer{display:grid;place-items:center;min-width:var(--tap);height:var(--tap);flex:none;text-decoration:none}
+.x-stage{position:relative;flex:none}
+.canvas img{position:absolute;inset:0;width:100%;height:100%;display:block}
+.x-feedwrap{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:6px var(--s1)}
+.x-feedwrap .feed .g .rx{font-size:18px;line-height:20px}
+.x-send{display:flex;align-items:center;gap:var(--s1);padding-right:6px}
+.x-send .inp{flex:1;min-width:0}
+.x-send .btn{padding:0 var(--s1);flex:none}
+.x-reactrow{display:flex;align-items:center;justify-content:space-between;gap:var(--s1);flex-wrap:wrap}
+.x-reactrow .reacts .react{position:relative}
+.x-reactrow .cap{line-height:18px}
+.x-chatnote{display:flex;align-items:center;gap:6px}
+.x-chatnote .ic{width:18px;height:18px;stroke:var(--pencil)}
+.feed .g.private .ic{stroke:var(--pencil)}
+[hidden]{display:none!important}
+
+/* "You got it!" moment: a highlighter note pinned over the canvas, never blocking it */
+.x-cheer{position:absolute;left:50%;top:var(--s1);z-index:2;display:flex;align-items:baseline;gap:var(--s1);padding:6px var(--s2);
+  white-space:nowrap;pointer-events:none;transform:translateX(-50%) rotate(-2deg);animation:x-cheer 3.6s ease-out both}
+.x-cheer .hand{font-size:28px;line-height:36px}
+@keyframes x-cheer{0%{opacity:0;transform:translateX(-50%) rotate(-2deg) scale(.6)}
+  8%{opacity:1;transform:translateX(-50%) rotate(-2deg) scale(1.08)}
+  14%{transform:translateX(-50%) rotate(-2deg) scale(1)}
+  85%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.x-cheer{animation:x-fade 3.6s linear both}}
+@keyframes x-fade{0%,85%{opacity:1}100%{opacity:0}}
+
+/* Keyboard up: the canvas shrinks whole, the feed keeps its last two lines,
+   the timer bar, category and reactions step aside until the keyboard goes. */
+.app.typing .tbarrow,.app.typing .wordrow .cap,.app.typing .x-reactrow{display:none}
+.app.typing .x-stage{flex:1;min-height:0;container-type:size}
+.app.typing .canvas{width:min(100cqw,calc(100cqh * 4 / 3));height:auto;margin:0 auto}
+.app.typing .x-feedwrap{flex:none;height:56px}
+/* ?keyboard: a stand-in for the phone keyboard so the state can be reviewed on a laptop */
+.x-kb{position:fixed;left:50%;bottom:0;width:min(100%,var(--col));transform:translateX(-50%);display:grid;place-items:center;
+  background:var(--pencil-soft);color:var(--scrap);font:400 24px/1 var(--hand)}
+</style>
+</head><body>
+<script src="../defs.js"></script>
+<script src="fake-data.js"></script>
+<div class="app fixed" id="app">
+  <header class="app-top">
+    <a class="icon-btn" href="index.html" aria-label="All screens"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></a>
+    <div class="grow">
+      <div><b id="turnLabel">Turn 4 of 8</b></div>
+      <div class="cap" id="drawerLabel">Jonas is drawing</div>
+    </div>
+    <a class="x-timer" id="timer" href="results.html?turn=4"><span class="cells big" aria-hidden="true"><b id="t1">4</b><b id="t2">1</b></span></a>
+  </header>
+
+  <div class="wordrow">
+    <div class="word" id="word" role="img"></div>
+    <span class="cap" id="wordCap"></span>
+  </div>
+
+  <div class="tbarrow"><div class="tbar" id="tbar" aria-hidden="true"></div></div>
+
+  <div class="x-stage">
+    <div class="canvas"><img src="drawings/lighthouse.svg" alt="Jonas's drawing so far: a red and white striped tower with a yellow light on top, by the sea"></div>
+    <div class="x-cheer notice ok" id="cheer" aria-hidden="true" hidden><span class="hand">You got it!</span><span class="pts">+150</span></div>
+  </div>
+
+  <div class="x-feedwrap" id="feedWrap">
+    <div class="feed" id="feed" role="log" aria-live="polite" aria-label="Guesses and chat"></div>
+  </div>
+
+  <footer class="app-foot">
+    <div class="x-reactrow" id="reactRow" hidden>
+      <div class="reacts" id="reacts" role="group" aria-label="Send a reaction"></div>
+      <span class="cap">Seen by all</span>
+    </div>
+    <form class="x-send" id="form" autocomplete="off">
+      <label class="sr-only" for="guess" id="guessLabel">Your guess</label>
+      <div class="inp"><input id="guess" name="guess" type="text" placeholder="Type your guess…" enterkeyhint="send" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="40"></div>
+      <button class="btn primary" type="submit">Send</button>
+    </form>
+  </footer>
+</div>
+<script>
+(function(){
+  const PP = window.PP, T = PP.turn4, me = PP.you, total = PP.room.drawSeconds;
+  const params = new URLSearchParams(location.search);
+  const app = document.getElementById("app");
+  const feed = document.getElementById("feed"), wrap = document.getElementById("feedWrap");
+  const input = document.getElementById("guess"), form = document.getElementById("form");
+  const colourOf = n => (PP.players.find(p => p.name === n) || PP.players[0]).colour;
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const label = n => n === me ? "You" : esc(n);
+  let guessed = false;
+
+  // Header
+  document.getElementById("turnLabel").textContent = `Turn ${T.number} of ${PP.room.turns}`;
+  document.getElementById("drawerLabel").textContent = `${T.drawer} is drawing`;
+  document.getElementById("wordCap").textContent = `${T.word.length} letters · ${T.category}`;
+
+  // The word: blanks with the hint letter, or the whole word once guessed
+  const wordEl = document.getElementById("word");
+  function drawWord(){
+    wordEl.innerHTML = [...T.word].map((ch, i) =>
+      guessed ? `<b>${esc(ch)}</b>` : (i === T.hint.index ? `<b class="hint">${esc(ch)}</b>` : `<b></b>`)).join("");
+    wordEl.setAttribute("aria-label", guessed
+      ? `The word is ${T.word}`
+      : `${T.word.length} letters, the first letter is ${T.hint.letter.toUpperCase()}`);
+  }
+
+  // Timer and timer bar
+  const tbar = document.getElementById("tbar");
+  tbar.innerHTML = "<i></i>".repeat(total / 2);
+  const timer = document.getElementById("timer");
+  let left = Math.max(1, Math.min(total, parseInt(params.get("seconds"), 10) || T.secondsLeft));
+  function drawTime(){
+    const s = String(Math.max(0, left)).padStart(2, "0");
+    document.getElementById("t1").textContent = s[0];
+    document.getElementById("t2").textContent = s[1];
+    timer.firstElementChild.classList.toggle("warn", left <= 10);
+    timer.setAttribute("aria-label", `${left} seconds left. Go to results`);
+    const used = Math.floor((total - left) / 2);
+    [...tbar.children].forEach((sq, i) => {
+      sq.className = i < used ? (i >= total / 2 - 5 ? "late" : "used") : "";
+    });
+  }
+  setInterval(() => {
+    left -= 1; drawTime();
+    if (left <= 0) location.href = "results.html?turn=4";
+  }, 1000);
+
+  // Feed
+  function line(item){
+    const c = `style="--c:var(${colourOf(item.who)})"`;
+    if (item.guessed) {
+      const who = item.who === me ? "You" : esc(item.who);
+      return `<p class="g ok"><i class="pc" ${c}></i><svg class="ic tick" aria-hidden="true"><use href="#i-tick"/></svg><b>${who}</b> guessed it!<span class="pts">+${item.points}</span></p>`;
+    }
+    if (item.react) return `<p class="g"><i class="pc" ${c}></i><b>${label(item.who)}</b> <span class="rx">${item.react}</span></p>`;
+    if (item.sys) return `<p class="g sys">${esc(item.sys)}</p>`;
+    if (item.chat) return `<p class="g private"><i class="pc" ${c}></i><svg class="ic" aria-hidden="true"><use href="#i-chat"/></svg><b>${label(item.who)}</b> ${esc(item.chat)}</p>`;
+    return `<p class="g"><i class="pc" ${c}></i><b>${label(item.who)}</b> ${esc(item.text)}</p>`;
+  }
+  function add(item){
+    feed.insertAdjacentHTML("beforeend", line(item));
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+  T.feed.forEach(add);
+
+  // Reactions (only after guessing)
+  const names = {"😂":"Laughing","👏":"Clapping","😮":"Wow","❤️":"Love"};
+  document.getElementById("reacts").innerHTML = PP.reactions.map(r =>
+    `<button type="button" class="react box" data-r="${r}" aria-label="React: ${names[r] || r}">${r}</button>`).join("");
+  document.getElementById("reacts").addEventListener("click", e => {
+    const b = e.target.closest("[data-r]"); if (b) add({ who: me, react: b.dataset.r });
+  });
+
+  // Guessed state
+  function becomeGuessed(animate){
+    guessed = true; drawWord();
+    add({ who: me, guessed: true, points: PP.scores.turn4[me] });
+    add({ sys: "Only players who guessed see your chat." });
+    document.getElementById("reactRow").hidden = false;
+    document.getElementById("guessLabel").textContent = "Chat with those who guessed";
+    input.placeholder = "Chat with those who guessed";
+    input.setAttribute("enterkeyhint", "send");
+    const cheer = document.getElementById("cheer");
+    cheer.hidden = false;
+    cheer.addEventListener("animationend", () => { cheer.hidden = true; }, { once: true });
+    if (animate && history.replaceState) history.replaceState(null, "", "?guessed");
+  }
+
+  const norm = s => s.toLowerCase().replace(/[\s-]+/g, "").replace(/[åä]/g, "a").replace(/ö/g, "o");
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    const v = input.value.trim(); if (!v) return;
+    input.value = "";
+    if (guessed) add({ who: me, chat: v });
+    else if (norm(v) === norm(T.word)) becomeGuessed(true);
+    else add({ who: me, text: v });
+  });
+
+  // Keyboard: when it covers the bottom of the screen, fit the round into what is left
+  const simKb = params.has("keyboard");
+  function fit(){
+    const vv = window.visualViewport;
+    const h = vv ? vv.height : innerHeight;
+    const kbUp = simKb || (innerHeight - h > 120 && document.activeElement === input);
+    app.classList.toggle("typing", kbUp);
+    const appH = simKb ? Math.round(innerHeight * 0.52) + "px" : (kbUp ? h + "px" : "");
+    app.style.height = appH; app.style.minHeight = appH;
+    if (kbUp && !simKb) window.scrollTo(0, 0);
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+  if (window.visualViewport) visualViewport.addEventListener("resize", fit);
+  input.addEventListener("focus", () => setTimeout(fit, 300));
+  input.addEventListener("blur", () => setTimeout(fit, 100));
+  if (simKb) {
+    document.body.insertAdjacentHTML("beforeend", `<div class="x-kb" aria-hidden="true" style="height:48%">phone keyboard</div>`);
+  }
+
+  drawWord(); drawTime();
+  if (params.has("guessed")) becomeGuessed(false);
+  fit();
+})();
+</script>
+</body></html>

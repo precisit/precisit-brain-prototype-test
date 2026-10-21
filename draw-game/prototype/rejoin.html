@@ -1,0 +1,234 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pen Panic · You're back</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+/* page-local: layout only */
+.x-view{display:flex;flex-direction:column;flex:1;min-height:0}
+.x-view[hidden]{display:none}
+.x-timer{flex:none;display:block;padding:6px 0;cursor:pointer}
+.x-timer .cells.idle b{color:var(--pencil-soft)}
+.canvas img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.canvas.x-stale img{opacity:.35;filter:grayscale(1)}
+.x-below{display:flex;flex-direction:column;flex:1;min-height:0}
+.x-live:not(:empty){padding:var(--s1) var(--s1) 0}
+.notice{display:flex;align-items:flex-start;gap:var(--s1);transition:opacity .6s ease}
+.notice .x-msg{flex:1;min-width:0;line-height:20px;padding:2px 0}
+.notice .x-msg b{display:block}
+.notice .icon-btn{margin:-12px -12px -12px 0}
+.notice.x-fade{opacity:0}
+.x-feedwrap{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:var(--s1)}
+/* small divider line in the feed: "While you were away" */
+.feed .g.x-sep{font-size:13px;padding-left:0;gap:var(--s1)}
+.feed .g.x-sep::before,.feed .g.x-sep::after{content:"";flex:1;height:1px;background:var(--pencil-soft)}
+.x-guess{display:flex;gap:var(--s1);padding-right:6px}
+.x-guess .inp{flex:1;min-width:0}
+.x-guess .btn{padding:0 var(--s1)}
+/* game over */
+.x-over{display:flex;flex-direction:column;gap:var(--s2);padding:var(--s2) var(--s1)}
+.x-over .board{margin-right:6px}
+.x-over .prow .pts{flex:none}
+</style>
+</head><body>
+<script src="../defs.js"></script>
+<script src="fake-data.js"></script>
+<div class="app fixed" id="app">
+
+  <!-- The round, as a guesser: same layout as guesser.html -->
+  <div class="x-view" id="round">
+    <header class="app-top">
+      <a class="icon-btn" href="index.html" aria-label="All screens"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></a>
+      <div class="grow">
+        <b id="turnLabel">Turn 5 of 8</b>
+        <div class="cap" id="drawerLabel">Farah is drawing</div>
+      </div>
+      <button type="button" class="x-timer" id="timer" aria-label="41 seconds left">
+        <span class="cells big" id="cells" aria-hidden="true"><b>4</b><b>1</b></span>
+      </button>
+    </header>
+
+    <div class="wordrow">
+      <div class="word" id="word" role="img" aria-label="6 letters"></div>
+      <span class="cap" id="wordCap">6 letters · Around the Home</span>
+    </div>
+
+    <div class="tbarrow"><div class="tbar" id="tbar" aria-hidden="true"></div></div>
+
+    <div class="canvas" id="canvas">
+      <img id="drawing" src="drawings/kettle.svg" alt="Farah's drawing so far: a kettle">
+    </div>
+
+    <div class="x-below">
+      <div class="x-live" id="live" aria-live="polite"></div>
+      <div class="x-feedwrap" id="feedwrap">
+        <div class="feed" id="feed" aria-label="Guesses"></div>
+      </div>
+    </div>
+
+    <form class="app-foot" id="guessForm" autocomplete="off">
+      <div class="x-guess">
+        <label class="inp"><span class="sr-only">Your guess</span>
+          <input id="guess" type="text" placeholder="Type your guess…" enterkeyhint="send" autocapitalize="off" spellcheck="false"></label>
+        <button type="submit" class="btn primary" id="send">Send</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- The game finished while the phone slept -->
+  <div class="x-view" id="over" hidden>
+    <header class="app-top">
+      <a class="icon-btn" href="index.html" aria-label="All screens"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></a>
+      <div class="grow">
+        <b>Game over</b>
+        <div class="cap">Room <span id="roomCode">HJ4K7Q</span></div>
+      </div>
+    </header>
+    <div class="app-body">
+      <div class="x-over" aria-live="polite">
+        <h1 class="title">The game ended while you were away</h1>
+        <div class="board box shadow">
+          <div class="prow you">
+            <span class="rank">2</span>
+            <i class="dot" style="--c:var(--p1)"></i>
+            <span class="who"><b>Milla</b><small>you · 2nd place</small></span>
+            <span class="pts" id="overPts">1180</span>
+          </div>
+        </div>
+        <p id="overText">Farah won with 1240 points. Your seat and name were kept to the end.</p>
+      </div>
+    </div>
+    <div class="app-foot">
+      <a class="btn primary block" href="results.html?final">See the final scores</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var P = window.PP, $ = function(id){ return document.getElementById(id); };
+  var me = P.you, total = P.room.drawSeconds, turns = P.room.turns;
+  var myScore = P.scores.afterTurn4[me];
+  var state = new URLSearchParams(location.search).get("state") || "back";
+  var secs = 0, tick = null, fadeT = null;
+
+  function colourOf(name){ var p = P.players.find(function(x){ return x.name === name; }); return "var(" + (p ? p.colour : "--p1") + ")"; }
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+
+  /* Round header pieces */
+  function setWord(n, cap){
+    $("word").innerHTML = new Array(n + 1).join("<b></b>");
+    $("word").setAttribute("aria-label", n + " letters");
+    $("wordCap").textContent = cap;
+  }
+  function drawTimer(){
+    var c = $("cells");
+    if (secs === null){
+      c.className = "cells big idle"; c.innerHTML = "<b>–</b><b>–</b>";
+      $("timer").setAttribute("aria-label", "Timer, reconnecting");
+    } else {
+      var t = String(Math.max(0, secs)).padStart(2, "0");
+      c.className = "cells big" + (secs <= 10 ? " warn" : "");
+      c.innerHTML = "<b>" + t[0] + "</b><b>" + t[1] + "</b>";
+      $("timer").setAttribute("aria-label", secs + " seconds left");
+    }
+    var used = secs === null ? 0 : Math.floor((total - secs) / 2), n = total / 2, h = "";
+    for (var i = 0; i < n; i++) h += i < used ? (i >= n - 5 ? '<i class="late"></i>' : '<i class="used"></i>') : "<i></i>";
+    $("tbar").innerHTML = h;
+  }
+  function run(from){
+    secs = from; drawTimer(); clearInterval(tick);
+    tick = setInterval(function(){ if (secs > 0){ secs--; drawTimer(); } else clearInterval(tick); }, 1000);
+  }
+
+  /* Feed */
+  function line(cls, html){ var p = document.createElement("p"); p.className = "g " + cls; p.innerHTML = html; $("feed").appendChild(p); return p; }
+  function guessedLine(name){
+    line("ok", '<i class="pc" style="--c:' + colourOf(name) + '"></i><svg class="ic tick" aria-hidden="true"><use href="#i-tick"/></svg><b>' + (name === me ? "You" : esc(name)) + '</b> guessed it!');
+  }
+
+  /* Notices */
+  function notice(cls, icon, title, text, opts){
+    opts = opts || {};
+    clearTimeout(fadeT);
+    var close = opts.closable === false ? "" :
+      '<button type="button" class="icon-btn" aria-label="Dismiss"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>';
+    $("live").innerHTML = '<div class="notice ' + cls + '"><svg class="ic" aria-hidden="true"><use href="#' + icon + '"/></svg>' +
+      '<p class="x-msg"><b>' + title + '</b>' + text + '</p>' + close + '</div>';
+    var n = $("live").firstChild, b = n.querySelector("button");
+    function gone(){ n.classList.add("x-fade"); setTimeout(function(){ if (n.parentNode) n.remove(); }, 650); }
+    if (b) b.addEventListener("click", gone);
+    if (opts.fadeAfter) fadeT = setTimeout(gone, opts.fadeAfter);
+  }
+
+  function input(on, ph){
+    $("guess").disabled = !on; $("send").disabled = !on;
+    $("guess").placeholder = ph || "Type your guess…";
+  }
+
+  /* States */
+  function roundTurn5(){
+    $("turnLabel").textContent = "Turn " + P.turn5.number + " of " + turns;
+    $("drawerLabel").textContent = P.turn5.drawer + " is drawing";
+    setWord(P.turn5.word.length, P.turn5.word.length + " letters · " + P.turn5.category);
+    $("feed").innerHTML = ""; $("canvas").classList.remove("x-stale");
+    if (!$("drawing")) $("canvas").innerHTML = '<img id="drawing" src="drawings/kettle.svg" alt="Farah\'s drawing so far: a kettle">';
+  }
+
+  var show = {
+    reconnecting: function(){
+      roundTurn5(); secs = null; drawTimer();
+      $("canvas").classList.add("x-stale");
+      input(false, "Reconnecting…");
+      notice("", "i-wifi", "Reconnecting…", "Your seat is saved.", { closable: false });
+      var t = setTimeout(go, 1500);
+      function go(){ clearTimeout(t); document.removeEventListener("click", go, true); setState("back"); }
+      setTimeout(function(){ document.addEventListener("click", go, true); }, 0);
+    },
+    back: function(){
+      roundTurn5(); input(true);
+      line("sys x-sep", "While you were away (" + P.turn5.awaySeconds + " s)");
+      P.turn5.whileAway.forEach(function(s){ guessedLine(s.split(" ")[0]); });
+      run(P.turn5.secondsLeft);
+      notice("ok", "i-tick", "You’re back, " + me, "Same seat, " + myScore + " points. The game kept going without you.", { fadeAfter: 6000 });
+    },
+    skipped: function(){
+      $("turnLabel").textContent = "Turn 6 of " + turns;
+      $("drawerLabel").textContent = "Olle is drawing";
+      setWord(5, "5 letters");
+      $("canvas").classList.remove("x-stale"); $("canvas").innerHTML = "";
+      $("feed").innerHTML = ""; input(true); run(total);
+      notice("", "i-clock", "Your turn was skipped while you were away.", "You kept your seat and your " + myScore + " points.", { fadeAfter: 8000 });
+    },
+    over: function(){
+      var f = P.scores.final, order = Object.keys(f).sort(function(a, b){ return f[b] - f[a]; });
+      $("overPts").textContent = f[me];
+      $("overText").textContent = order[0] + " won with " + f[order[0]] + " points. Your seat and name were kept to the end.";
+      $("roomCode").textContent = P.room.code;
+    }
+  };
+
+  function setState(s){
+    if (!show[s]) s = "back";
+    state = s; clearInterval(tick); clearTimeout(fadeT); $("live").innerHTML = "";
+    $("round").hidden = s === "over"; $("over").hidden = s !== "over";
+    show[s]();
+  }
+
+  /* Prototype: tapping the timer skips ahead to the end of the game */
+  $("timer").addEventListener("click", function(){ if (state !== "reconnecting") location.href = "results.html?final"; });
+
+  $("guessForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    var v = $("guess").value.trim(); if (!v) return;
+    if (state === "back" && v.toLowerCase() === P.turn5.word){
+      guessedLine(me); input(false, "You guessed it!");
+    } else {
+      line("", '<i class="pc" style="--c:' + colourOf(me) + '"></i><b>You</b> ' + esc(v));
+    }
+    $("guess").value = ""; $("feedwrap").scrollTop = 1e6;
+  });
+
+  setState(state);
+})();
+</script>
+</body></html>

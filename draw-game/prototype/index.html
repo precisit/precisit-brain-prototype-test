@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Pen Panic · Prototype</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+/* page-local */
+.x-screen{margin-top:var(--s2)}
+.x-screen h2{font:400 26px/36px var(--hand)}
+.x-screen .n{display:inline-block;width:24px;height:24px;margin-right:var(--s1);text-align:center;font-size:22px;line-height:27px;box-shadow:inset 0 0 0 2px var(--ink)}
+.x-states{display:flex;flex-direction:column}
+.x-states a{display:flex;align-items:center;justify-content:space-between;gap:var(--s1);min-height:var(--tap);padding:0 var(--s1);text-decoration:none}
+.x-states a+a{box-shadow:inset 0 2px 0 var(--ink)}
+.x-states a span{flex:1}
+.x-states a small{color:var(--pencil);font-size:14px;overflow-wrap:anywhere;text-align:right;max-width:45%}
+@media (max-width:380px){.x-states a small{display:none}}
+/* Wall view: every state as a phone, for reviewing them together */
+body.x-wall{background:var(--table)}
+.x-wallbar{display:flex;align-items:center;gap:var(--s2);padding:var(--s1) var(--s2)}
+.x-grid{display:flex;flex-wrap:wrap;gap:var(--s2);padding:0 var(--s2) var(--s4)}
+.x-grid figure{display:flex;flex-direction:column;gap:6px}
+.x-grid figcaption{font-size:14px;line-height:18px;max-width:360px}
+.x-grid iframe{width:360px;height:740px;border:0;box-shadow:0 0 0 2px var(--ink),6px 6px 0 rgba(28,46,122,.10);background:var(--paper)}
+</style>
+</head>
+<body>
+<script src="../defs.js"></script>
+
+<div class="app" id="list">
+  <header class="app-top">
+    <span class="icon-btn" aria-hidden="true"><svg class="ic"><use href="#i-pen"/></svg></span>
+    <div class="grow"><b>Pen Panic</b> <span class="cap">clickable prototype</span></div>
+  </header>
+  <main class="app-body">
+    <h1 class="display"><span class="hl">All screens</span></h1>
+    <p class="cap">Fake data, no backend. Tap through from the landing page, or jump to any state below. One game, seen from Milla's phone: she hosts, draws turn 3, guesses turn 4, and her phone sleeps during turn 5.</p>
+    <div id="screens"></div>
+    <p class="cap" style="margin-top:var(--s2)">On a laptop: <a class="link" href="?wall">see every state side by side</a></p>
+  </main>
+  <footer class="app-foot">
+    <a class="btn primary block" href="landing.html">Start from the beginning</a>
+  </footer>
+</div>
+
+<script>
+const SCREENS = [
+  { n: 1, title: "Landing", file: "landing.html", states: [
+    ["", "Create or join"], ["?create", "Host types a name"], ["?join", "Join with a room code"], ["?code=HJ4K7Q", "Opened a shared link"] ] },
+  { n: 2, title: "Lobby", file: "lobby.html", states: [
+    ["", "Host: share, players, settings"], ["?as=player", "Player waiting for the host"] ] },
+  { n: 3, title: "Drawing", file: "drawer.html", states: [
+    ["", "Pick a word"], ["?draw", "Drawing, with the tools"] ] },
+  { n: 4, title: "Guessing", file: "guesser.html", states: [
+    ["", "Guessing"], ["?guessed", "Guessed it: chat and react"] ] },
+  { n: 5, title: "Results", file: "results.html", states: [
+    ["?turn=3", "After turn 3: you drew"], ["?turn=4", "After turn 4: you guessed"], ["?final", "Final scoreboard"] ] },
+  { n: 6, title: "You're back", file: "rejoin.html", states: [
+    ["?state=reconnecting", "Phone wakes up"], ["", "Back in the same seat"], ["?state=skipped", "Your drawing turn was skipped"], ["?state=over", "Game ended while away"] ] }
+];
+
+if (location.search.includes("wall")) {
+  document.body.classList.add("x-wall");
+  document.getElementById("list").remove();
+  const bar = `<div class="x-wallbar"><a class="link" href="index.html">← List view</a><span class="cap">Every state at 360 × 740. Screens with timers move on by themselves; reload to reset.</span></div>`;
+  const figs = SCREENS.flatMap(s => s.states.map(([q, label]) =>
+    `<figure><figcaption><b>${s.n}. ${s.title}</b> · ${label} <span class="muted">${s.file}${q}</span></figcaption><iframe src="${s.file}${q}" title="${s.title}: ${label}" loading="lazy"></iframe></figure>`));
+  document.body.insertAdjacentHTML("beforeend", bar + `<div class="x-grid">${figs.join("")}</div>`);
+} else {
+  document.getElementById("screens").innerHTML = SCREENS.map(s => `
+    <section class="x-screen">
+      <h2><span class="n">${s.n}</span>${s.title}</h2>
+      <div class="x-states box">${s.states.map(([q, label]) =>
+        `<a href="${s.file}${q}"><span>${label}</span><small>${s.file}${q}</small><svg class="ic" aria-hidden="true"><use href="#i-next"/></svg></a>`).join("")}
+      </div>
+    </section>`).join("");
+}
+</script>
+</body>
+</html>
