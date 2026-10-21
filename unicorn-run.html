@@ -79,6 +79,8 @@
     .tr{display:none}
     .hud .panel{padding:10px 12px}
     h1{font-size:13px}
+    footer{bottom:88px;right:16px;font-size:10px}
+    .bl{bottom:16px;left:16px;right:16px}
   }
 </style>
 </head>
@@ -87,7 +89,7 @@
 
 <div class="hud tl panel">
   <h1>Unicorn Run</h1>
-  <p class="sub">single HTML file · WebGPU + WGSL</p>
+  <p class="sub">single HTML file · no libraries</p>
   <div class="kbadge" style="margin-top:8px"><span class="dot"></span><span id="gpuName">WebGPU</span></div>
 </div>
 
@@ -455,32 +457,270 @@ fn fs(i : VOut) -> @location(0) vec4<f32> {
 }
 `;
 
-async function main(){
-  if(!navigator.gpu){
-    fail('navigator.gpu is missing. This prototype needs WebGPU: Chrome/Edge 113+, or Safari 26+ on a GPU-backed machine.');
-    return;
-  }
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference:'high-performance' });
-  if(!adapter){
-    fail('No WebGPU adapter was returned by the browser.');
-    return;
-  }
-  const info = adapter.info || {};
-  window.__proto.adapter = { vendor:info.vendor||'', arch:info.architecture||'', desc:info.description||'' };
-  gpuName.textContent = 'WebGPU · ' + (info.vendor ? (info.vendor+' '+info.architecture).trim() : 'adapter ready');
+function buildScene(dt){
+  vn=0; triCount=0;
 
-  const device = await adapter.requestDevice();
-  device.addEventListener('uncapturederror', (e)=>{
-    window.__proto.error = String(e.error && e.error.message || e.error);
-    fail(window.__proto.error);
+  /* unicorn path: circle with a breathing radius */
+  const R = 6.6 + 1.5*Math.sin(simT*0.31);
+  const ang = simT*0.52;
+  const pos = [Math.cos(ang)*R, 0, Math.sin(ang)*R];
+  const vel = V3.sub(pos, prevPos);
+  if(V3.len(vel) > 1e-5) yaw = Math.atan2(vel[0], vel[2]);
+  prevPos = pos;
+
+  /* ground */
+  disc(0, 78, 44, 7, [0.36,0.70,0.52], [0.14,0.20,0.30]);
+
+  /* meadow patch ring under the run circle */
+  disc(0.012, 9.4, 44, 5, [0.38,0.73,0.55], [0.34,0.67,0.52]);
+
+  /* distant hills */
+  for(let i=0;i<9;i++){
+    const a=i/9*Math.PI*2 + 0.4;
+    const d=46+((i*7)%11);
+    const h=5+((i*5)%7);
+    cone([Math.cos(a)*d, -0.4, Math.sin(a)*d],[0,1,0],h,9+i%4,7,[0.20,0.16,0.34]);
+  }
+
+  /* trees */
+  const TREE_N=18;
+  for(let i=0;i<TREE_N;i++){
+    const a=i/TREE_N*Math.PI*2 + 0.21;
+    const d=17+ (i*3)%13;
+    const bx=Math.cos(a)*d, bz=Math.sin(a)*d;
+    const hh=1.5+((i*7)%5)*0.35;
+    box([bx,hh*0.45,bz],0.26,hh*0.9,0.26,[0.34,0.24,0.34]);
+    cone([bx,hh*0.78,bz],[0,1,0],1.9,0.95,7,[0.16,0.42,0.36]);
+    cone([bx,hh*1.28,bz],[0,1,0],1.5,0.72,7,[0.20,0.52,0.42]);
+    cone([bx,hh*1.72,bz],[0,1,0],1.0,0.46,7,[0.26,0.62,0.48]);
+  }
+
+  /* ---- unicorn ---- */
+  /* soft contact shadow under the unicorn */
+  ALPHA_CUR = 0.22;
+  {
+    const shN=20, rx=0.72, rz=1.12;
+    const ring=a=>[pos[0]+Math.cos(a)*rx, 0.02, pos[2]+Math.sin(a)*rz];
+    for(let i=0;i<shN;i++){
+      const a0=(i/shN)*Math.PI*2, a1=((i+1)/shN)*Math.PI*2;
+      tri([pos[0],0.02,pos[2]], ring(a1), ring(a0), [0.05,0.03,0.10], [pos[0],0.6,pos[2]]);
+    }
+  }
+  ALPHA_CUR = 1;
+
+  const x = xf(pos, yaw, 1.45);
+  buildUnicorn(x, simT*11.5, simT);
+
+  /* ---- rainbow trail on the path ---- */
+  ALPHA_CUR = 0.9;
+  trail.push({ p:[pos[0], 0.55, pos[2]], a:0 });
+  if(trail.length>TRAIL_MAX) trail.shift();
+  for(const s of trail) s.a += dt;
+  const alive = trail.length;
+  for(let i=0;i<alive-1;i++){
+    const A=trail[i], B=trail[i+1];
+    const age = A.a;
+    const fade = clamp(1 - age/2.4, 0, 1);
+    if(fade<=0.02) continue;
+    const t = i/(alive-1);
+    const warp = u => 0.26 + 0.60*Math.sin(Math.PI*Math.min(1,u*1.08));
+    const hA = warp(t), hB = warp(t*0.985);
+    const y0 = 0.14;
+    const col = hsl(0.02 + t*2.4 + simT*0.3, 0.85, 0.64);
+    const a0=[A.p[0], y0,     A.p[2]];
+    const a1=[A.p[0], y0+hA,  A.p[2]];
+    const b0=[B.p[0], y0,     B.p[2]];
+    const b1=[B.p[0], y0+hB,  B.p[2]];
+    tri(a0,b0,b1,col,[A.p[0],-2,A.p[2]]);
+    tri(a0,b1,a1,col,[A.p[0],-2,A.p[2]]);
+  }
+
+  /* ---- sparkles around the horn / path ---- */
+  const hornTip = null;
+  for(const s of sparkles){
+    const life = (simT*0.5 + s.phase) % 1;
+    const rise = life*1.9;
+    const wp = x.p([s.off[0]*(1-life*0.5), 1.05+rise, s.off[2]*(1-life*0.5)]);
+    const sz = s.size*(1-life*0.65);
+    const col = hsl(s.hue + simT*0.2);
+    const cr = Math.cos(s.spin*simT*2), sr = Math.sin(s.spin*simT*2);
+    const ax=[cr*sz, 0, sr*sz], ay=[0, sz*1.4, 0], az=[-sr*sz,0,cr*sz];
+    const p000=[wp[0]-ax[0]-ay[0]-az[0], wp[1]-ax[1]-ay[1]-az[1], wp[2]-ax[2]-ay[2]-az[2]];
+    const p111=[wp[0]+ax[0]+ay[0]+az[0], wp[1]+ax[1]+ay[1]+az[1], wp[2]+ax[2]+ay[2]+az[2]];
+    cone(wp,[ay[0],ay[1],ay[2]],sz*2.2,sz,5,col);
+    void p000; void p111; void hornTip;
+  }
+
+  /* ---- big rainbow arc (billboarded to the camera) ---- */
+  const fwd = V3.norm(V3.sub(cam.target,[
+    cam.target[0]+Math.cos(cam.pitch)*Math.sin(cam.yaw)*cam.dist,
+    cam.target[1]+Math.sin(cam.pitch)*cam.dist,
+    cam.target[2]+Math.cos(cam.pitch)*Math.cos(cam.yaw)*cam.dist
+  ]));
+  const right = V3.norm(V3.cross([0,1,0],fwd));
+  /* keep the arch framed: anchor it behind the current view, at a fixed depth */
+  const fh = V3.norm([fwd[0], 0, fwd[2]]);
+  const center=[cam.target[0]+fh[0]*18, -1.4, cam.target[2]+fh[2]*18];
+  const bands=8, SEG=54, R0=8.6, R1=11.6;
+  ALPHA_CUR = 0.44; SHADE_ON = 0;
+  for(let b=0;b<bands;b++){
+    const r0=R0+(R1-R0)*(b/bands), r1=R0+(R1-R0)*((b+1)/bands);
+    const bandCol=hsl((b/bands)*0.74, 0.92, 0.70);
+    const P=(rr,a)=>{
+      const ca=Math.cos(a), sa=Math.sin(a);
+      return [
+        center[0]+right[0]*rr*ca,
+        center[1]+rr*sa,
+        center[2]+right[2]*rr*ca
+      ];
+    };
+    for(let i=0;i<SEG;i++){
+      const a0=Math.PI*(i/SEG), a1=Math.PI*((i+1)/SEG);
+      const q=[P(r0,a0),P(r0,a1),P(r1,a1),P(r1,a0)];
+      tri(q[0],q[1],q[2],bandCol,[center[0],center[1]+6,center[2]]);
+      tri(q[0],q[2],q[3],bandCol,[center[0],center[1]+6,center[2]]);
+    }
+  }
+  ALPHA_CUR = 1; SHADE_ON = 1;
+
+  /* camera follows the unicorn gently */
+  cam.tTarget=[pos[0], 1.15, pos[2]];
+  cam.target=[mix(cam.target[0],cam.tTarget[0],0.055),
+              mix(cam.target[1],cam.tTarget[1],0.055),
+              mix(cam.target[2],cam.tTarget[2],0.055)];
+}
+
+/* ------------------------------------------------------------------ *
+ * frame state + camera (renderer-agnostic)                           *
+ * ------------------------------------------------------------------ */
+const proj=new Float32Array(16), view=new Float32Array(16), vp=new Float32Array(16);
+const fogCol=[0.30,0.15,0.42];
+let simT=0, prevPos=[8,0,0], yaw=Math.PI/2;
+
+function camEye(){
+  return [
+    cam.target[0]+Math.cos(cam.pitch)*Math.sin(cam.yaw)*cam.dist,
+    cam.target[1]+Math.sin(cam.pitch)*cam.dist,
+    cam.target[2]+Math.cos(cam.pitch)*Math.cos(cam.yaw)*cam.dist
+  ];
+}
+function camMatrices(){
+  const w=Math.max(1,canvas.width), h=Math.max(1,canvas.height);
+  perspective(proj, 60*Math.PI/180, w/h, 0.1, 260);
+  const eye=camEye();
+  lookAt(view, eye, cam.target, [0,1,0]);
+  mulMat(vp, proj, view);
+  return eye;
+}
+function fitCanvas(){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const w = Math.max(1, Math.floor(canvas.clientWidth*dpr));
+  const h = Math.max(1, Math.floor(canvas.clientHeight*dpr));
+  if(canvas.width!==w || canvas.height!==h){ canvas.width=w; canvas.height=h; }
+}
+
+/* ---------------- input: drag / pinch / wheel / keys ---------------- */
+function bindInput(){
+  const pts = new Map();
+  let pinch0 = 0;
+
+  canvas.addEventListener('pointerdown', e=>{
+    pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+    if(pts.size===2){
+      const [a,b] = [...pts.values()];
+      pinch0 = Math.hypot(a.x-b.x, a.y-b.y);
+    }
+    userTouched=true; hintEl.classList.add('fade');
   });
 
+  canvas.addEventListener('pointermove', e=>{
+    const prev = pts.get(e.pointerId);
+    if(!prev) return;
+    if(pts.size>=2){
+      pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+      const [a,b] = [...pts.values()];
+      const d = Math.hypot(a.x-b.x, a.y-b.y);
+      if(pinch0>0 && d>0){
+        cam.dist = clamp(cam.dist * (pinch0/d), 4, 46);
+        pinch0 = d;
+      }
+      return;
+    }
+    const dx=e.clientX-prev.x, dy=e.clientY-prev.y;
+    pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    cam.yaw   -= dx*0.0055;
+    cam.pitch  = clamp(cam.pitch + dy*0.0042, -0.10, 1.32);
+  });
+
+  const end=e=>{ pts.delete(e.pointerId); if(pts.size<2) pinch0=0; };
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+
+  canvas.addEventListener('wheel', e=>{
+    e.preventDefault();
+    cam.dist = clamp(cam.dist*Math.exp(e.deltaY*0.0012), 4, 46);
+    userTouched=true; hintEl.classList.add('fade');
+  }, { passive:false });
+
+  canvas.addEventListener('dblclick', ()=>{
+    cam.yaw=0.85; cam.pitch=0.22; cam.dist=10.5;
+  });
+
+  window.addEventListener('keydown', e=>{
+    const k=e.key;
+    if(k==='ArrowLeft'){ cam.yaw+=0.09; e.preventDefault(); }
+    else if(k==='ArrowRight'){ cam.yaw-=0.09; e.preventDefault(); }
+    else if(k==='ArrowUp'){ cam.pitch=clamp(cam.pitch-0.06,-0.10,1.32); e.preventDefault(); }
+    else if(k==='ArrowDown'){ cam.pitch=clamp(cam.pitch+0.06,-0.10,1.32); e.preventDefault(); }
+    else if(k==='+'||k==='='){ cam.dist=clamp(cam.dist*0.9,4,46); }
+    else if(k==='-'||k==='_'){ cam.dist=clamp(cam.dist*1.1,4,46); }
+    if(k.startsWith('Arrow')){ userTouched=true; hintEl.classList.add('fade'); }
+  });
+}
+
+/* ---------------- shared frame loop ---------------- */
+function startLoop(draw){
+  let t0=performance.now(), fpsAcc=0, fpsN=0, lastStat=0;
+  function loop(now){
+    const dt = Math.min(0.05,(now-t0)/1000);
+    t0=now; simT += dt;
+    buildScene(dt);
+    draw();
+    window.__proto.frames++;
+    window.__proto.tris = triCount;
+    window.__proto.ready = true;
+
+    fpsAcc += dt; fpsN++;
+    if(now-lastStat > 400){
+      const fps = fpsN/Math.max(fpsAcc,1e-6);
+      fpsEl.textContent = fps.toFixed(0)+' fps';
+      trisEl.textContent = triCount.toLocaleString('en-US')+' triangles';
+      window.__proto.fps = +fps.toFixed(1);
+      fpsAcc=0; fpsN=0; lastStat=now;
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  setTimeout(()=>hintEl.classList.add('fade'), 9000);
+}
+
+/* ------------------------------------------------------------------ *
+ * backend 1: WebGPU                                                    *
+ * ------------------------------------------------------------------ */
+async function initWebGPU(){
+  if(!navigator.gpu) throw new Error('navigator.gpu missing');
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference:'high-performance' });
+  if(!adapter) throw new Error('no WebGPU adapter');
+  const info = adapter.info || {};
+  const device = await adapter.requestDevice();
+
   const ctx = canvas.getContext('webgpu');
+  if(!ctx) throw new Error('no webgpu canvas context');
   const format = navigator.gpu.getPreferredCanvasFormat();
   ctx.configure({ device, format, alphaMode:'premultiplied' });
 
   const module = device.createShaderModule({ code: WGSL });
-
   device.pushErrorScope('validation');
   const pipeline = device.createRenderPipeline({
     layout:'auto',
@@ -512,7 +752,12 @@ async function main(){
     multisample:{ count:4 }
   });
   const pipeErr = await device.popErrorScope();
-  if(pipeErr){ fail('Pipeline creation failed: ' + pipeErr.message); return; }
+  if(pipeErr) throw new Error('pipeline: ' + pipeErr.message);
+
+  device.addEventListener('uncapturederror', (e)=>{
+    window.__proto.error = String(e.error && e.error.message || e.error);
+    fail(window.__proto.error);
+  });
 
   const uniformBuf = device.createBuffer({ size:96, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
   const bindGroup = device.createBindGroup({
@@ -521,219 +766,20 @@ async function main(){
   });
 
   let vbuf = device.createBuffer({ size:VB.byteLength, usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
-
   let msaaView=null, depthView=null;
-  function resize(){
-    const dpr = Math.min(window.devicePixelRatio||1, 2);
-    const w = Math.max(1, Math.floor(canvas.clientWidth*dpr));
-    const h = Math.max(1, Math.floor(canvas.clientHeight*dpr));
-    if(canvas.width!==w || canvas.height!==h || !msaaView){
-      canvas.width=w; canvas.height=h;
-      if(msaaView) msaaView.destroy();
-      if(depthView) depthView.destroy();
-      msaaView = device.createTexture({
-        size:[w,h,1], sampleCount:4, format,
-        usage:GPUTextureUsage.RENDER_ATTACHMENT
-      }).createView();
-      depthView = device.createTexture({
-        size:[w,h,1], sampleCount:4, format:'depth24plus',
-        usage:GPUTextureUsage.RENDER_ATTACHMENT
-      }).createView();
-    }
-  }
-  resize();
-  window.addEventListener('resize', resize);
-
-  /* ---------------- camera input ---------------- */
-  let dragging=false, lx=0, ly=0;
-  canvas.addEventListener('pointerdown', e=>{
-    dragging=true; lx=e.clientX; ly=e.clientY;
-    canvas.setPointerCapture(e.pointerId);
-    userTouched=true; hintEl.classList.add('fade');
-  });
-  canvas.addEventListener('pointermove', e=>{
-    if(!dragging) return;
-    const dx=e.clientX-lx, dy=e.clientY-ly;
-    lx=e.clientX; ly=e.clientY;
-    cam.yaw   -= dx*0.0055;
-    cam.pitch  = clamp(cam.pitch + dy*0.0042, -0.10, 1.32);
-  });
-  const endDrag=e=>{ dragging=false; try{canvas.releasePointerCapture(e.pointerId);}catch(_){} };
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
-  canvas.addEventListener('wheel', e=>{
-    e.preventDefault();
-    cam.dist = clamp(cam.dist*Math.exp(e.deltaY*0.0012), 4, 46);
-    userTouched=true; hintEl.classList.add('fade');
-  }, { passive:false });
-  canvas.addEventListener('dblclick', ()=>{
-    cam.yaw=0.85; cam.pitch=0.22; cam.dist=10.5;
-  });
-  window.addEventListener('keydown', e=>{
-    const k=e.key;
-    if(k==='ArrowLeft'){ cam.yaw+=0.09; e.preventDefault(); }
-    else if(k==='ArrowRight'){ cam.yaw-=0.09; e.preventDefault(); }
-    else if(k==='ArrowUp'){ cam.pitch=clamp(cam.pitch-0.06,-0.10,1.32); e.preventDefault(); }
-    else if(k==='ArrowDown'){ cam.pitch=clamp(cam.pitch+0.06,-0.10,1.32); e.preventDefault(); }
-    else if(k==='+'||k==='='){ cam.dist=clamp(cam.dist*0.9,4,46); }
-    else if(k==='-'||k==='_'){ cam.dist=clamp(cam.dist*1.1,4,46); }
-    if(k.startsWith('Arrow')){ userTouched=true; hintEl.classList.add('fade'); }
-  });
-
-  /* ---------------- scene rebuild per frame ---------------- */
-  const proj=new Float32Array(16), view=new Float32Array(16), vp=new Float32Array(16);
   const uni=new Float32Array(24);
-  const fogCol=[0.30,0.15,0.42];
 
-  let t0=performance.now(), simT=0, fpsAcc=0, fpsN=0, lastStat=0;
-  let prevPos=[8,0,0];
-  let yaw=Math.PI/2;
-
-  function buildScene(dt){
-    vn=0; triCount=0;
-
-    /* unicorn path: circle with a breathing radius */
-    const R = 6.6 + 1.5*Math.sin(simT*0.31);
-    const ang = simT*0.52;
-    const pos = [Math.cos(ang)*R, 0, Math.sin(ang)*R];
-    const vel = V3.sub(pos, prevPos);
-    if(V3.len(vel) > 1e-5) yaw = Math.atan2(vel[0], vel[2]);
-    prevPos = pos;
-
-    /* ground */
-    disc(0, 78, 44, 7, [0.36,0.70,0.52], [0.14,0.20,0.30]);
-
-    /* meadow patch ring under the run circle */
-    disc(0.012, 9.4, 44, 5, [0.38,0.73,0.55], [0.34,0.67,0.52]);
-
-    /* distant hills */
-    for(let i=0;i<9;i++){
-      const a=i/9*Math.PI*2 + 0.4;
-      const d=46+((i*7)%11);
-      const h=5+((i*5)%7);
-      cone([Math.cos(a)*d, -0.4, Math.sin(a)*d],[0,1,0],h,9+i%4,7,[0.20,0.16,0.34]);
-    }
-
-    /* trees */
-    const TREE_N=18;
-    for(let i=0;i<TREE_N;i++){
-      const a=i/TREE_N*Math.PI*2 + 0.21;
-      const d=17+ (i*3)%13;
-      const bx=Math.cos(a)*d, bz=Math.sin(a)*d;
-      const hh=1.5+((i*7)%5)*0.35;
-      box([bx,hh*0.45,bz],0.26,hh*0.9,0.26,[0.34,0.24,0.34]);
-      cone([bx,hh*0.78,bz],[0,1,0],1.9,0.95,7,[0.16,0.42,0.36]);
-      cone([bx,hh*1.28,bz],[0,1,0],1.5,0.72,7,[0.20,0.52,0.42]);
-      cone([bx,hh*1.72,bz],[0,1,0],1.0,0.46,7,[0.26,0.62,0.48]);
-    }
-
-    /* ---- unicorn ---- */
-    /* soft contact shadow under the unicorn */
-    ALPHA_CUR = 0.22;
-    {
-      const shN=20, rx=0.72, rz=1.12;
-      const ring=a=>[pos[0]+Math.cos(a)*rx, 0.02, pos[2]+Math.sin(a)*rz];
-      for(let i=0;i<shN;i++){
-        const a0=(i/shN)*Math.PI*2, a1=((i+1)/shN)*Math.PI*2;
-        tri([pos[0],0.02,pos[2]], ring(a1), ring(a0), [0.05,0.03,0.10], [pos[0],0.6,pos[2]]);
-      }
-    }
-    ALPHA_CUR = 1;
-
-    const x = xf(pos, yaw, 1.45);
-    buildUnicorn(x, simT*11.5, simT);
-
-    /* ---- rainbow trail on the path ---- */
-    ALPHA_CUR = 0.9;
-    trail.push({ p:[pos[0], 0.55, pos[2]], a:0 });
-    if(trail.length>TRAIL_MAX) trail.shift();
-    for(const s of trail) s.a += dt;
-    const alive = trail.length;
-    for(let i=0;i<alive-1;i++){
-      const A=trail[i], B=trail[i+1];
-      const age = A.a;
-      const fade = clamp(1 - age/2.4, 0, 1);
-      if(fade<=0.02) continue;
-      const t = i/(alive-1);
-      const warp = u => 0.26 + 0.60*Math.sin(Math.PI*Math.min(1,u*1.08));
-      const hA = warp(t), hB = warp(t*0.985);
-      const y0 = 0.14;
-      const col = hsl(0.02 + t*2.4 + simT*0.3, 0.85, 0.64);
-      const a0=[A.p[0], y0,     A.p[2]];
-      const a1=[A.p[0], y0+hA,  A.p[2]];
-      const b0=[B.p[0], y0,     B.p[2]];
-      const b1=[B.p[0], y0+hB,  B.p[2]];
-      tri(a0,b0,b1,col,[A.p[0],-2,A.p[2]]);
-      tri(a0,b1,a1,col,[A.p[0],-2,A.p[2]]);
-    }
-
-    /* ---- sparkles around the horn / path ---- */
-    const hornTip = null;
-    for(const s of sparkles){
-      const life = (simT*0.5 + s.phase) % 1;
-      const rise = life*1.9;
-      const wp = x.p([s.off[0]*(1-life*0.5), 1.05+rise, s.off[2]*(1-life*0.5)]);
-      const sz = s.size*(1-life*0.65);
-      const col = hsl(s.hue + simT*0.2);
-      const cr = Math.cos(s.spin*simT*2), sr = Math.sin(s.spin*simT*2);
-      const ax=[cr*sz, 0, sr*sz], ay=[0, sz*1.4, 0], az=[-sr*sz,0,cr*sz];
-      const p000=[wp[0]-ax[0]-ay[0]-az[0], wp[1]-ax[1]-ay[1]-az[1], wp[2]-ax[2]-ay[2]-az[2]];
-      const p111=[wp[0]+ax[0]+ay[0]+az[0], wp[1]+ax[1]+ay[1]+az[1], wp[2]+ax[2]+ay[2]+az[2]];
-      cone(wp,[ay[0],ay[1],ay[2]],sz*2.2,sz,5,col);
-      void p000; void p111; void hornTip;
-    }
-
-    /* ---- big rainbow arc (billboarded to the camera) ---- */
-    const fwd = V3.norm(V3.sub(cam.target,[
-      cam.target[0]+Math.cos(cam.pitch)*Math.sin(cam.yaw)*cam.dist,
-      cam.target[1]+Math.sin(cam.pitch)*cam.dist,
-      cam.target[2]+Math.cos(cam.pitch)*Math.cos(cam.yaw)*cam.dist
-    ]));
-    const right = V3.norm(V3.cross([0,1,0],fwd));
-    /* keep the arch framed: anchor it behind the current view, at a fixed depth */
-    const fh = V3.norm([fwd[0], 0, fwd[2]]);
-    const center=[cam.target[0]+fh[0]*18, -1.4, cam.target[2]+fh[2]*18];
-    const bands=8, SEG=54, R0=8.6, R1=11.6;
-    ALPHA_CUR = 0.44; SHADE_ON = 0;
-    for(let b=0;b<bands;b++){
-      const r0=R0+(R1-R0)*(b/bands), r1=R0+(R1-R0)*((b+1)/bands);
-      const bandCol=hsl((b/bands)*0.74, 0.92, 0.70);
-      const P=(rr,a)=>{
-        const ca=Math.cos(a), sa=Math.sin(a);
-        return [
-          center[0]+right[0]*rr*ca,
-          center[1]+rr*sa,
-          center[2]+right[2]*rr*ca
-        ];
-      };
-      for(let i=0;i<SEG;i++){
-        const a0=Math.PI*(i/SEG), a1=Math.PI*((i+1)/SEG);
-        const q=[P(r0,a0),P(r0,a1),P(r1,a1),P(r1,a0)];
-        tri(q[0],q[1],q[2],bandCol,[center[0],center[1]+6,center[2]]);
-        tri(q[0],q[2],q[3],bandCol,[center[0],center[1]+6,center[2]]);
-      }
-    }
-    ALPHA_CUR = 1; SHADE_ON = 1;
-
-    /* camera follows the unicorn gently */
-    cam.tTarget=[pos[0], 1.15, pos[2]];
-    cam.target=[mix(cam.target[0],cam.tTarget[0],0.055),
-                mix(cam.target[1],cam.tTarget[1],0.055),
-                mix(cam.target[2],cam.tTarget[2],0.055)];
+  function resize(){
+    fitCanvas();
+    const w=canvas.width, h=canvas.height;
+    if(msaaView) msaaView.destroy();
+    if(depthView) depthView.destroy();
+    msaaView = device.createTexture({ size:[w,h,1], sampleCount:4, format, usage:GPUTextureUsage.RENDER_ATTACHMENT }).createView();
+    depthView = device.createTexture({ size:[w,h,1], sampleCount:4, format:'depth24plus', usage:GPUTextureUsage.RENDER_ATTACHMENT }).createView();
   }
 
   function draw(){
-    resize();
-    const w=canvas.width, h=canvas.height;
-    const eye=[
-      cam.target[0]+Math.cos(cam.pitch)*Math.sin(cam.yaw)*cam.dist,
-      cam.target[1]+Math.sin(cam.pitch)*cam.dist,
-      cam.target[2]+Math.cos(cam.pitch)*Math.cos(cam.yaw)*cam.dist
-    ];
-    perspective(proj, 60*Math.PI/180, w/h, 0.1, 260);
-    lookAt(view, eye, cam.target, [0,1,0]);
-    mulMat(vp, proj, view);
-
+    const eye = camMatrices();
     uni.set(vp,0);
     uni[16]=eye[0]; uni[17]=eye[1]; uni[18]=eye[2]; uni[19]=1;
     uni[20]=fogCol[0]; uni[21]=fogCol[1]; uni[22]=fogCol[2]; uni[23]=1;
@@ -744,7 +790,7 @@ async function main(){
       vbuf.destroy();
       vbuf = device.createBuffer({ size:Math.ceil(bytes*1.25), usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
     }
-    device.queue.writeBuffer(vbuf,0,VB.buffer,0,bytes);
+    if(bytes>0) device.queue.writeBuffer(vbuf,0,VB.buffer,0,bytes);
 
     const enc = device.createCommandEncoder();
     const pass = enc.beginRenderPass({
@@ -755,8 +801,7 @@ async function main(){
         loadOp:'clear', storeOp:'store'
       }],
       depthStencilAttachment:{
-        view: depthView,
-        depthClearValue:1, depthLoadOp:'clear', depthStoreOp:'store'
+        view: depthView, depthClearValue:1, depthLoadOp:'clear', depthStoreOp:'store'
       }
     });
     pass.setPipeline(pipeline);
@@ -767,31 +812,137 @@ async function main(){
     device.queue.submit([enc.finish()]);
   }
 
-  function loop(now){
-    const dt = Math.min(0.05,(now-t0)/1000);
-    t0=now; simT += dt;
-    buildScene(dt);
-    draw();
-    window.__proto.frames++;
-    window.__proto.tris = triCount;
-    window.__proto.ready = true;
-
-    fpsAcc += dt; fpsN++;
-    if(now-lastStat > 400){
-      const fps = fpsN/Math.max(fpsAcc,1e-6);
-      fpsEl.textContent = fps.toFixed(0)+' fps';
-      trisEl.textContent = triCount.toLocaleString('en-US')+' triangles';
-      window.__proto.fps = +fps.toFixed(1);
-      fpsAcc=0; fpsN=0; lastStat=now;
-    }
-    requestAnimationFrame(loop);
-  }
-  requestAnimationFrame(loop);
-
-  setTimeout(()=>hintEl.classList.add('fade'), 9000);
+  window.__proto.adapter = { vendor:info.vendor||'', arch:info.architecture||'', desc:info.description||'' };
+  gpuName.textContent = 'WebGPU · ' + (info.vendor ? (info.vendor+' '+info.architecture).trim() : 'ready');
+  return { name:'webgpu', draw, resize };
 }
 
-main().catch(e=>fail('Startup error: '+e.message));
+/* ------------------------------------------------------------------ *
+ * backend 2: WebGL2 fallback (phones / browsers without WebGPU)        *
+ * ------------------------------------------------------------------ */
+const GLSL_VS = `#version 300 es
+in vec3 aPos;
+in vec3 aCol;
+in float aAlpha;
+uniform mat4 uVP;
+out vec3 vCol;
+out vec3 vW;
+out float vA;
+void main(){
+  gl_Position = uVP * vec4(aPos, 1.0);
+  vCol = aCol;
+  vW = aPos;
+  vA = aAlpha;
+}`;
+
+const GLSL_FS = `#version 300 es
+precision highp float;
+in vec3 vCol;
+in vec3 vW;
+in float vA;
+uniform vec3 uCam;
+uniform vec3 uFog;
+out vec4 fragColor;
+void main(){
+  float d = distance(vW, uCam);
+  float f = clamp((d - 26.0) / 46.0, 0.0, 1.0);
+  vec3 c = mix(vCol, uFog, f * f);
+  fragColor = vec4(c * vA, vA);
+}`;
+
+function initWebGL(){
+  const gl = canvas.getContext('webgl2', { alpha:true, premultipliedAlpha:true, antialias:true, depth:true, powerPreference:'high-performance' });
+  if(!gl) throw new Error('webgl2 canvas context unavailable');
+
+  const sh = (type, src)=>{
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: '+gl.getShaderInfoLog(s));
+    return s;
+  };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, GLSL_VS));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, GLSL_FS));
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link: '+gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+
+  const vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, VB.byteLength, gl.DYNAMIC_DRAW);
+
+  const loc = {
+    pos: gl.getAttribLocation(prog,'aPos'),
+    col: gl.getAttribLocation(prog,'aCol'),
+    alpha: gl.getAttribLocation(prog,'aAlpha'),
+    vp: gl.getUniformLocation(prog,'uVP'),
+    cam: gl.getUniformLocation(prog,'uCam'),
+    fog: gl.getUniformLocation(prog,'uFog')
+  };
+  gl.enableVertexAttribArray(loc.pos);
+  gl.enableVertexAttribArray(loc.col);
+  gl.enableVertexAttribArray(loc.alpha);
+  gl.vertexAttribPointer(loc.pos,   3, gl.FLOAT, false, 28, 0);
+  gl.vertexAttribPointer(loc.col,   3, gl.FLOAT, false, 28, 12);
+  gl.vertexAttribPointer(loc.alpha, 1, gl.FLOAT, false, 28, 24);
+
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LESS);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.clearColor(0,0,0,0);
+  gl.uniform3fv(loc.fog, fogCol);
+
+  function resize(){
+    fitCanvas();
+    gl.viewport(0,0,canvas.width,canvas.height);
+  }
+
+  function draw(){
+    const eye = camMatrices();
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.uniformMatrix4fv(loc.vp, false, vp);
+    gl.uniform3fv(loc.cam, eye);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, VB.subarray(0, vn*7));
+    if(vn>0) gl.drawArrays(gl.TRIANGLES, 0, vn);
+  }
+
+  let renderer = '';
+  try{
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    if(ext) renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '';
+  }catch(_){}
+  gpuName.textContent = 'WebGL2' + (renderer ? ' · ' + String(renderer).slice(0,26) : ' fallback');
+  return { name:'webgl2', draw, resize };
+}
+
+/* ------------------------------------------------------------------ *
+ * boot: WebGPU first, WebGL2 as fallback                              *
+ * ------------------------------------------------------------------ */
+(async () => {
+  const forced = new URLSearchParams(location.search).get('renderer');
+  let backend = null;
+  let gpuErr = '';
+  if(forced !== 'webgl'){
+    try { backend = await initWebGPU(); }
+    catch(e){ gpuErr = (e && e.message) || String(e); }
+  }
+  if(!backend){
+    try { backend = initWebGL(); }
+    catch(e){
+      const why = [gpuErr, (e && e.message) || String(e)].filter(Boolean).join(' · ');
+      fail('Neither WebGPU nor WebGL2 could start here: ' + why);
+      return;
+    }
+  }
+  window.__proto.renderer = backend.name;
+  window.__proto.gpuError = gpuErr || null;
+  bindInput();
+  backend.resize();
+  window.addEventListener('resize', backend.resize);
+  startLoop(backend.draw);
+})();
 </script>
 </body>
 </html>
