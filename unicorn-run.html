@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Unicorn Run — WebGPU</title>
+<style>
+  :root{
+    --ink:#f6eaff;
+    --dim:rgba(246,234,255,.62);
+    --glass:rgba(24,14,46,.42);
+    --edge:rgba(255,255,255,.16);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:
+      radial-gradient(120% 90% at 50% 108%, #ffc2d6 0%, rgba(255,194,214,0) 55%),
+      linear-gradient(#0b0724 0%, #1e1148 34%, #4a2170 62%, #8b3a86 82%, #ffa9c4 100%);
+    background-attachment:fixed;
+    color:var(--ink);
+    font:14px/1.45 ui-sans-serif,-apple-system,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  #gpu{
+    position:fixed;inset:0;width:100%;height:100%;display:block;
+    touch-action:none;cursor:grab;
+  }
+  #gpu:active{cursor:grabbing}
+
+  .hud{position:fixed;pointer-events:none;z-index:2}
+  .panel{
+    background:var(--glass);
+    border:1px solid var(--edge);
+    border-radius:14px;
+    padding:12px 16px;
+    backdrop-filter:blur(14px) saturate(140%);
+    -webkit-backdrop-filter:blur(14px) saturate(140%);
+    box-shadow:0 10px 34px rgba(9,4,26,.35);
+  }
+  .tl{top:20px;left:20px}
+  .tr{top:20px;right:20px;text-align:right;font-variant-numeric:tabular-nums}
+  .bl{bottom:20px;left:20px}
+
+  h1{
+    margin:0;font-size:15px;letter-spacing:.20em;text-transform:uppercase;
+    font-weight:650;
+  }
+  .sub{margin:4px 0 0;color:var(--dim);font-size:12px;letter-spacing:.02em}
+  .kbadge{
+    display:inline-flex;align-items:center;gap:7px;
+    font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#e9d7ff
+  }
+  .dot{width:7px;height:7px;border-radius:50%;background:#6ef0c0;box-shadow:0 0 12px #6ef0c0}
+  .stat{font-size:12px;color:var(--dim);margin-top:3px}
+
+  .hint{font-size:12px;color:var(--dim);letter-spacing:.02em;transition:opacity .8s ease}
+  .hint b{color:var(--ink);font-weight:600}
+  .hint.fade{opacity:.32}
+
+  #overlay{
+    position:fixed;inset:0;z-index:5;display:grid;place-items:center;
+    background:radial-gradient(60% 60% at 50% 40%,rgba(30,16,58,.86),rgba(8,5,22,.94));
+    text-align:center;padding:28px;
+  }
+  #overlay[hidden]{display:none}
+  #overlay .box{max-width:520px}
+  #overlay .msg{color:#ffd9e6;font-size:14px;margin:0 0 8px}
+  #overlay .small{color:var(--dim);font-size:12px;margin:0}
+
+  footer{
+    position:fixed;bottom:20px;right:20px;z-index:2;pointer-events:auto;
+    font-size:11px;color:var(--dim);letter-spacing:.04em;
+  }
+  footer a{color:rgba(246,234,255,.78);text-decoration:none;border-bottom:1px solid rgba(246,234,255,.24)}
+  footer a:hover{color:#fff}
+  @media (max-width:680px){
+    .tr{display:none}
+    .hud .panel{padding:10px 12px}
+    h1{font-size:13px}
+  }
+</style>
+</head>
+<body>
+<canvas id="gpu"></canvas>
+
+<div class="hud tl panel">
+  <h1>Unicorn Run</h1>
+  <p class="sub">single HTML file · WebGPU + WGSL</p>
+  <div class="kbadge" style="margin-top:8px"><span class="dot"></span><span id="gpuName">WebGPU</span></div>
+</div>
+
+<div class="hud tr panel">
+  <div class="stat" id="fps">— fps</div>
+  <div class="stat" id="tris">— triangles</div>
+</div>
+
+<div class="hud bl panel hint" id="hint">
+  <b>Drag</b> to orbit · <b>Scroll</b> / pinch to zoom · <b>← ↑ ↓ →</b> to turn · <b>double-click</b> to reset
+</div>
+
+<footer>Prototype by Mira · <a href="https://precisit.com/" target="_blank" rel="noopener">Precisit AB</a></footer>
+
+<div id="overlay" hidden>
+  <div class="box">
+    <p class="msg">WebGPU could not start.</p>
+    <p class="small" id="errText"></p>
+  </div>
+</div>
+
+<script type="module">
+window.__proto = { frames: 0, tris: 0, adapter: null, error: null, ready: false, fps: 0 };
+
+const canvas   = document.getElementById('gpu');
+const overlay  = document.getElementById('overlay');
+const errText  = document.getElementById('errText');
+const fpsEl    = document.getElementById('fps');
+const trisEl   = document.getElementById('tris');
+const gpuName  = document.getElementById('gpuName');
+const hintEl   = document.getElementById('hint');
+
+function fail(msg){
+  window.__proto.error = msg;
+  errText.textContent = msg;
+  overlay.hidden = false;
+}
+
+/* ------------------------------------------------------------------ *
+ * math                                                               *
+ * ------------------------------------------------------------------ */
+const V3 = {
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  len:a=>Math.hypot(a[0],a[1],a[2]),
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];},
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  mul:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  lerp:(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t]
+};
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const mix=(a,b,t)=>a+(b-a)*t;
+
+function perspective(out,fovy,aspect,near,far){
+  const f=1/Math.tan(fovy/2);
+  out.fill(0);
+  out[0]=f/aspect; out[5]=f;
+  out[10]=far/(near-far); out[11]=-1;
+  out[14]=(far*near)/(near-far);
+  return out;
+}
+function lookAt(out,eye,center,up){
+  let z=V3.norm(V3.sub(eye,center));
+  let x=V3.norm(V3.cross(up,z));
+  let y=V3.cross(z,x);
+  out[0]=x[0]; out[1]=y[0]; out[2]=z[0]; out[3]=0;
+  out[4]=x[1]; out[5]=y[1]; out[6]=z[1]; out[7]=0;
+  out[8]=x[2]; out[9]=y[2]; out[10]=z[2]; out[11]=0;
+  out[12]=-V3.dot(x,eye); out[13]=-V3.dot(y,eye); out[14]=-V3.dot(z,eye); out[15]=1;
+  return out;
+}
+function mulMat(out,a,b){
+  for(let c=0;c<4;c++)for(let r=0;r<4;r++){
+    let s=0; for(let k=0;k<4;k++) s+=a[k*4+r]*b[c*4+k];
+    out[c*4+r]=s;
+  }
+  return out;
+}
+
+/* hsl 0..1 -> rgb 0..1 */
+function hsl(h,s=0.95,l=0.62){
+  h=((h%1)+1)%1;
+  const a=s*Math.min(l,1-l);
+  const f=n=>{const k=(n+h*12)%12;return l-a*Math.max(-1,Math.min(k-3,9-k,1));};
+  return [f(0),f(8),f(4)];
+}
+
+/* ------------------------------------------------------------------ *
+ * vertex builder (flat-shaded triangle soup, 7 floats per vertex)     *
+ * ------------------------------------------------------------------ */
+let VB = new Float32Array(1<<21);
+let vn = 0;                      // vertex count
+let triCount = 0;
+const LIGHT = V3.norm([0.42,0.86,0.34]);
+
+function grow(need){
+  if(need*7 <= VB.length) return;
+  let cap = VB.length;
+  while(cap < need*7) cap*=2;
+  const nb = new Float32Array(cap);
+  nb.set(VB.subarray(0,vn*7));
+  VB = nb;
+}
+function pushV(p,col){
+  const i = vn*7;
+  VB[i]=p[0]; VB[i+1]=p[1]; VB[i+2]=p[2];
+  VB[i+3]=col[0]; VB[i+4]=col[1]; VB[i+5]=col[2]; VB[i+6]=ALPHA_CUR;
+  vn++;
+}
+let ALPHA_CUR = 1;
+let SHADE_ON = 1;
+function tri(a,b,c,col,ref){
+  const n = V3.norm(V3.cross(V3.sub(b,a),V3.sub(c,a)));
+  let nn = n;
+  if(ref){
+    const cen=[(a[0]+b[0]+c[0])/3,(a[1]+b[1]+c[1])/3,(a[2]+b[2]+c[2])/3];
+    if(V3.dot(n,V3.sub(cen,ref))<0) nn=[-n[0],-n[1],-n[2]];
+  }
+  const diff = Math.max(0,V3.dot(nn,LIGHT));
+  const sky  = 0.5+0.5*nn[1];
+  const sh   = SHADE_ON ? clamp(0.62 + 0.46*diff + 0.14*sky, 0, 1.18) : 1;
+  const cc = [col[0]*sh, col[1]*sh, col[2]*sh];
+  pushV(a,cc); pushV(b,cc); pushV(c,cc);
+  triCount++;
+}
+function quad(a,b,c,d,col,ref){ tri(a,b,c,col,ref); tri(a,c,d,col,ref); }
+
+/* oriented box: centre, orthonormal basis (u,v,w), half extents */
+function obox(cen,u,v,w,hx,hy,hz,col){
+  const P=(sx,sy,sz)=>[
+    cen[0]+u[0]*hx*sx+v[0]*hy*sy+w[0]*hz*sz,
+    cen[1]+u[1]*hx*sx+v[1]*hy*sy+w[1]*hz*sz,
+    cen[2]+u[2]*hx*sx+v[2]*hy*sy+w[2]*hz*sz
+  ];
+  const p000=P(-1,-1,-1),p100=P(1,-1,-1),p110=P(1,1,-1),p010=P(-1,1,-1);
+  const p001=P(-1,-1,1), p101=P(1,-1,1), p111=P(1,1,1), p011=P(-1,1,1);
+  quad(p000,p100,p110,p010,col,cen);
+  quad(p001,p011,p111,p101,col,cen);
+  quad(p000,p001,p101,p100,col,cen);
+  quad(p010,p110,p111,p011,col,cen);
+  quad(p000,p010,p011,p001,col,cen);
+  quad(p100,p101,p111,p110,col,cen);
+}
+/* axis-aligned box helper */
+function box(cen,sx,sy,sz,col){
+  obox(cen,[1,0,0],[0,1,0],[0,0,1],sx/2,sy/2,sz/2,col);
+}
+/* box spanning two points, cross-section w x h */
+function segBox(p0,p1,w,h,col){
+  const axis=V3.norm(V3.sub(p1,p0));
+  let refU = Math.abs(axis[1])>0.94 ? [1,0,0] : [0,1,0];
+  const u=V3.norm(V3.cross(refU,axis));
+  const v=V3.cross(axis,u);
+  const cen=[(p0[0]+p1[0])/2,(p0[1]+p1[1])/2,(p0[2]+p1[2])/2];
+  obox(cen,u,v,axis,w/2,h/2,V3.len(V3.sub(p1,p0))/2,col);
+}
+/* cone with apex along dir from base */
+function cone(base,dir,length,radius,sides,col){
+  const w=V3.norm(dir);
+  const refU = Math.abs(w[1])>0.94 ? [1,0,0] : [0,1,0];
+  const u=V3.norm(V3.cross(refU,w));
+  const v=V3.cross(w,u);
+  const apex=[base[0]+w[0]*length, base[1]+w[1]*length, base[2]+w[2]*length];
+  const ink = [base[0]+w[0]*length*0.28, base[1]+w[1]*length*0.28, base[2]+w[2]*length*0.28];
+  const ring=t=>{
+    const a=t*Math.PI*2, ca=Math.cos(a), sa=Math.sin(a);
+    return [
+      base[0]+(u[0]*ca+v[0]*sa)*radius,
+      base[1]+(u[1]*ca+v[1]*sa)*radius,
+      base[2]+(u[2]*ca+v[2]*sa)*radius
+    ];
+  };
+  for(let i=0;i<sides;i++){
+    const a=ring(i/sides), b=ring((i+1)/sides);
+    tri(a,b,apex,col,ink);
+    tri(base,b,a,col,apex);
+  }
+}
+/* flat disc / ground rings */
+function disc(cy,radius,segments,rings,cIn,cOut){
+  for(let r=0;r<rings;r++){
+    const t0=r/rings, t1=(r+1)/rings;
+    const c0=V3.lerp(cIn,cOut,t0), c1=V3.lerp(cIn,cOut,t1);
+    for(let i=0;i<segments;i++){
+      const a0=(i/segments)*Math.PI*2, a1=((i+1)/segments)*Math.PI*2;
+      const r0=radius*t0, r1=radius*t1;
+      const P=(a,rr)=>[Math.cos(a)*rr, cy, Math.sin(a)*rr];
+      quad(P(a0,r0),P(a1,r0),P(a1,r1),P(a0,r1), V3.lerp(c0,c1,0.5), [0,cy-4,0]);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * scene state                                                        *
+ * ------------------------------------------------------------------ */
+const cam = { yaw:0.85, pitch:0.22, dist:10.5, target:[0,1.15,0], tTarget:[0,1.15,0] };
+let userTouched = false;
+
+const TRAIL_MAX = 46;
+const trail = [];
+const sparkles = [];
+for(let i=0;i<34;i++){
+  sparkles.push({
+    phase:Math.random(),
+    spin:0.6+Math.random()*1.4,
+    off:[(Math.random()-0.5)*1.7, Math.random()*1.5, (Math.random()-0.5)*1.9],
+    hue:Math.random(),
+    size:0.028+Math.random()*0.038
+  });
+}
+
+const PASTEL = [1.00,0.985,1.00];
+const CREAM  = [1.00,0.96,0.98];
+const HOOF   = [0.16,0.13,0.25];
+const HORN   = [1.00,0.92,0.66];
+const EAR    = [0.98,0.88,0.95];
+
+/* unicorn local space: standing on y=0, facing +Z */
+function xf(pos,yaw,scale){
+  const c=Math.cos(yaw), s=Math.sin(yaw);
+  return {
+    p:v=>[pos[0]+scale*(v[0]*c+v[2]*s), pos[1]+scale*v[1], pos[2]+scale*(-v[0]*s+v[2]*c)],
+    d:v=>[v[0]*c+v[2]*s, v[1], -v[0]*s+v[2]*c]
+  };
+}
+
+function buildUnicorn(xf, phase, tb){
+  const P=v=>xf.p(v), D=v=>xf.d(v);
+  const U=D([1,0,0]), V=D([0,1,0]), W=D([0,0,1]);
+  const bob = 0.055*Math.sin(phase*2);
+
+  const bodyCen = P([0, 0.95+bob, 0.02]);
+  obox(bodyCen,U,V,W, 0.320, 0.350, 0.68, PASTEL);              // barrel
+  obox(P([0,0.96+bob,-0.56]),U,V,W, 0.320,0.340,0.30, PASTEL);  // hindquarters
+  obox(P([0,0.93+bob, 0.56]),U,V,W, 0.300,0.320,0.26, CREAM);   // chest
+
+  // neck (leans up & forward)
+  const neckA=P([0,1.05+bob,0.60]), neckB=P([0,1.48+bob,0.88]);
+  segBox(neckA,neckB,0.42,0.46,PASTEL);
+
+  // head + muzzle
+  const headCen=P([0,1.55+bob,1.02]);
+  obox(headCen,U,V,W, 0.180,0.200,0.300, PASTEL);
+  obox(P([0,1.462+bob,1.310]),U,V,W, 0.128,0.128,0.150, CREAM);
+  // nostrils
+  box(P([ 0.050,1.470+bob,1.440]),0.036,0.032,0.02,HOOF);
+  box(P([-0.050,1.470+bob,1.440]),0.036,0.032,0.02,HOOF);
+
+  // eyes
+  box(P([ 0.172,1.630+bob,1.060]),0.034,0.052,0.058,[0.10,0.08,0.16]);
+  box(P([-0.172,1.630+bob,1.060]),0.034,0.052,0.058,[0.10,0.08,0.16]);
+  box(P([ 0.186,1.644+bob,1.060]),0.016,0.024,0.030,[0.95,0.92,1]);
+
+  // horn (two stacked cones: warm gold base, bright tip)
+  const hornDir=D([0,0.90,0.44]);
+  const hornBase=P([0,1.70+bob,1.09]);
+  cone(hornBase,hornDir,0.32,0.098,10,HORN);
+  cone([hornBase[0]+hornDir[0]*0.29,hornBase[1]+hornDir[1]*0.29,hornBase[2]+hornDir[2]*0.29],
+       hornDir,0.40,0.055,9,[1.00,0.98,0.90]);
+
+  // ears
+  const earA=P([0.140,1.700+bob,0.92]), earB=P([-0.140,1.700+bob,0.92]);
+  cone(earA,D([0.26,1,-0.05]),0.24,0.070,7,EAR);
+  cone(earB,D([-0.26,1,-0.05]),0.24,0.070,7,EAR);
+
+  // ---- legs: 2 segments each, swing animated --------------------------
+  const hips=[[0.195,0.82,0.48],[-0.195,0.82,0.48],[0.195,0.83,-0.46],[-0.195,0.83,-0.46]];
+  const phOff=[0,Math.PI*0.94,Math.PI*1.06,Math.PI*0.12];
+  for(let i=0;i<4;i++){
+    const ph = phase + phOff[i];
+    const swing = 0.50*Math.sin(ph);
+    const lift  = Math.max(0, Math.sin(ph+0.7));
+    const hip = [hips[i][0], hips[i][1]+bob, hips[i][2]];
+    const upperLen = 0.40, lowerLen = 0.36;
+    const knee = [
+      hip[0],
+      hip[1]-Math.cos(swing)*upperLen,
+      hip[2]+Math.sin(swing)*upperLen
+    ];
+    const a2 = swing - 0.85*lift;
+    const foot = [
+      knee[0],
+      knee[1]-Math.cos(a2)*lowerLen,
+      knee[2]+Math.sin(a2)*lowerLen
+    ];
+    segBox(P(hip),P(knee),0.165,0.185, i%2? CREAM : PASTEL);
+    segBox(P(knee),P(foot),0.120,0.132, PASTEL);
+    // hoof
+    const hc = [foot[0], foot[1]-0.045, foot[2]+0.012];
+    box(P(hc),0.132,0.105,0.165,HOOF);
+  }
+
+  // ---- mane (rainbow, flowing along the crest) ------------------------
+  const maneBot=P([0,1.06+bob,0.50]), maneTop=P([0,1.72+bob,0.94]);
+  const maneN=9;
+  let mPrev=maneBot;
+  for(let i=0;i<maneN;i++){
+    const t=(i+1)/maneN;
+    const flap=0.085*Math.sin(tb*8.5 - i*0.75);
+    const next=[
+      V3.lerp(maneBot,maneTop,t)[0] + flap*0.7,
+      V3.lerp(maneBot,maneTop,t)[1] + 0.07,
+      V3.lerp(maneBot,maneTop,t)[2] - 0.06 - 0.05*t
+    ];
+    segBox(mPrev,next, 0.13+0.05*Math.sin(t*Math.PI), 0.22, hsl(0.0+t*0.9,0.95,0.66));
+    mPrev=next;
+  }
+  // forelock between the ears
+  cone(P([0,1.71+bob,1.00]),D([0,0.55,0.9]),0.22,0.085,6,hsl(0.93,0.95,0.68));
+
+  // ---- tail (rainbow) -------------------------------------------------
+  const tailBase=P([0,1.04+bob,-0.84]);
+  const tailN=11;
+  let prev=tailBase;
+  for(let i=0;i<tailN;i++){
+    const t=(i+1)/tailN;
+    const sway=0.14*Math.sin(tb*5.5 - i*0.7);
+    const next=[
+      tailBase[0]+sway*(0.5+t),
+      tailBase[1]+0.14*Math.sin(t*2.0) - 0.30*t*t + sway*0.2,
+      tailBase[2]-0.75*t - 0.22*Math.sin(tb*4 + i*0.5)*t
+    ];
+    segBox(prev,next,0.14+0.06*(1-t),0.17,hsl(0.06+i*0.062,0.95,0.68));
+    prev=next;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * WebGPU setup                                                        *
+ * ------------------------------------------------------------------ */
+const WGSL = /* wgsl */`
+struct U {
+  vp     : mat4x4<f32>,
+  camPos : vec4<f32>,
+  fogCol : vec4<f32>,
+};
+@group(0) @binding(0) var<uniform> u : U;
+
+struct VOut {
+  @builtin(position) pos : vec4<f32>,
+  @location(0) col   : vec3<f32>,
+  @location(1) alpha : f32,
+  @location(2) wpos  : vec3<f32>,
+};
+
+@vertex
+fn vs(@location(0) p : vec3<f32>,
+      @location(1) c : vec3<f32>,
+      @location(2) a : f32) -> VOut {
+  var o : VOut;
+  o.pos  = u.vp * vec4<f32>(p, 1.0);
+  o.col  = c;
+  o.alpha = a;
+  o.wpos = p;
+  return o;
+}
+
+@fragment
+fn fs(i : VOut) -> @location(0) vec4<f32> {
+  let d = distance(i.wpos, u.camPos.xyz);
+  let f = clamp((d - 26.0) / 46.0, 0.0, 1.0);
+  let c = mix(i.col, u.fogCol.rgb, f * f);
+  return vec4<f32>(c * i.alpha, i.alpha);
+}
+`;
+
+async function main(){
+  if(!navigator.gpu){
+    fail('navigator.gpu is missing. This prototype needs WebGPU: Chrome/Edge 113+, or Safari 26+ on a GPU-backed machine.');
+    return;
+  }
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference:'high-performance' });
+  if(!adapter){
+    fail('No WebGPU adapter was returned by the browser.');
+    return;
+  }
+  const info = adapter.info || {};
+  window.__proto.adapter = { vendor:info.vendor||'', arch:info.architecture||'', desc:info.description||'' };
+  gpuName.textContent = 'WebGPU · ' + (info.vendor ? (info.vendor+' '+info.architecture).trim() : 'adapter ready');
+
+  const device = await adapter.requestDevice();
+  device.addEventListener('uncapturederror', (e)=>{
+    window.__proto.error = String(e.error && e.error.message || e.error);
+    fail(window.__proto.error);
+  });
+
+  const ctx = canvas.getContext('webgpu');
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({ device, format, alphaMode:'premultiplied' });
+
+  const module = device.createShaderModule({ code: WGSL });
+
+  device.pushErrorScope('validation');
+  const pipeline = device.createRenderPipeline({
+    layout:'auto',
+    vertex:{
+      module,
+      entryPoint:'vs',
+      buffers:[{
+        arrayStride: 28,
+        attributes:[
+          { shaderLocation:0, offset:0,  format:'float32x3' },
+          { shaderLocation:1, offset:12, format:'float32x3' },
+          { shaderLocation:2, offset:24, format:'float32'   }
+        ]
+      }]
+    },
+    fragment:{
+      module,
+      entryPoint:'fs',
+      targets:[{
+        format,
+        blend:{
+          color:{ srcFactor:'one', dstFactor:'one-minus-src-alpha', operation:'add' },
+          alpha:{ srcFactor:'one', dstFactor:'one-minus-src-alpha', operation:'add' }
+        }
+      }]
+    },
+    primitive:{ topology:'triangle-list', cullMode:'none' },
+    depthStencil:{ format:'depth24plus', depthWriteEnabled:true, depthCompare:'less' },
+    multisample:{ count:4 }
+  });
+  const pipeErr = await device.popErrorScope();
+  if(pipeErr){ fail('Pipeline creation failed: ' + pipeErr.message); return; }
+
+  const uniformBuf = device.createBuffer({ size:96, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
+  const bindGroup = device.createBindGroup({
+    layout: pipeline.getBindGroupLayout(0),
+    entries:[{ binding:0, resource:{ buffer:uniformBuf } }]
+  });
+
+  let vbuf = device.createBuffer({ size:VB.byteLength, usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
+
+  let msaaView=null, depthView=null;
+  function resize(){
+    const dpr = Math.min(window.devicePixelRatio||1, 2);
+    const w = Math.max(1, Math.floor(canvas.clientWidth*dpr));
+    const h = Math.max(1, Math.floor(canvas.clientHeight*dpr));
+    if(canvas.width!==w || canvas.height!==h || !msaaView){
+      canvas.width=w; canvas.height=h;
+      if(msaaView) msaaView.destroy();
+      if(depthView) depthView.destroy();
+      msaaView = device.createTexture({
+        size:[w,h,1], sampleCount:4, format,
+        usage:GPUTextureUsage.RENDER_ATTACHMENT
+      }).createView();
+      depthView = device.createTexture({
+        size:[w,h,1], sampleCount:4, format:'depth24plus',
+        usage:GPUTextureUsage.RENDER_ATTACHMENT
+      }).createView();
+    }
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  /* ---------------- camera input ---------------- */
+  let dragging=false, lx=0, ly=0;
+  canvas.addEventListener('pointerdown', e=>{
+    dragging=true; lx=e.clientX; ly=e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+    userTouched=true; hintEl.classList.add('fade');
+  });
+  canvas.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const dx=e.clientX-lx, dy=e.clientY-ly;
+    lx=e.clientX; ly=e.clientY;
+    cam.yaw   -= dx*0.0055;
+    cam.pitch  = clamp(cam.pitch + dy*0.0042, -0.10, 1.32);
+  });
+  const endDrag=e=>{ dragging=false; try{canvas.releasePointerCapture(e.pointerId);}catch(_){} };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('wheel', e=>{
+    e.preventDefault();
+    cam.dist = clamp(cam.dist*Math.exp(e.deltaY*0.0012), 4, 46);
+    userTouched=true; hintEl.classList.add('fade');
+  }, { passive:false });
+  canvas.addEventListener('dblclick', ()=>{
+    cam.yaw=0.85; cam.pitch=0.22; cam.dist=10.5;
+  });
+  window.addEventListener('keydown', e=>{
+    const k=e.key;
+    if(k==='ArrowLeft'){ cam.yaw+=0.09; e.preventDefault(); }
+    else if(k==='ArrowRight'){ cam.yaw-=0.09; e.preventDefault(); }
+    else if(k==='ArrowUp'){ cam.pitch=clamp(cam.pitch-0.06,-0.10,1.32); e.preventDefault(); }
+    else if(k==='ArrowDown'){ cam.pitch=clamp(cam.pitch+0.06,-0.10,1.32); e.preventDefault(); }
+    else if(k==='+'||k==='='){ cam.dist=clamp(cam.dist*0.9,4,46); }
+    else if(k==='-'||k==='_'){ cam.dist=clamp(cam.dist*1.1,4,46); }
+    if(k.startsWith('Arrow')){ userTouched=true; hintEl.classList.add('fade'); }
+  });
+
+  /* ---------------- scene rebuild per frame ---------------- */
+  const proj=new Float32Array(16), view=new Float32Array(16), vp=new Float32Array(16);
+  const uni=new Float32Array(24);
+  const fogCol=[0.30,0.15,0.42];
+
+  let t0=performance.now(), simT=0, fpsAcc=0, fpsN=0, lastStat=0;
+  let prevPos=[8,0,0];
+  let yaw=Math.PI/2;
+
+  function buildScene(dt){
+    vn=0; triCount=0;
+
+    /* unicorn path: circle with a breathing radius */
+    const R = 6.6 + 1.5*Math.sin(simT*0.31);
+    const ang = simT*0.52;
+    const pos = [Math.cos(ang)*R, 0, Math.sin(ang)*R];
+    const vel = V3.sub(pos, prevPos);
+    if(V3.len(vel) > 1e-5) yaw = Math.atan2(vel[0], vel[2]);
+    prevPos = pos;
+
+    /* ground */
+    disc(0, 78, 44, 7, [0.36,0.70,0.52], [0.14,0.20,0.30]);
+
+    /* meadow patch ring under the run circle */
+    disc(0.012, 9.4, 44, 5, [0.38,0.73,0.55], [0.34,0.67,0.52]);
+
+    /* distant hills */
+    for(let i=0;i<9;i++){
+      const a=i/9*Math.PI*2 + 0.4;
+      const d=46+((i*7)%11);
+      const h=5+((i*5)%7);
+      cone([Math.cos(a)*d, -0.4, Math.sin(a)*d],[0,1,0],h,9+i%4,7,[0.20,0.16,0.34]);
+    }
+
+    /* trees */
+    const TREE_N=18;
+    for(let i=0;i<TREE_N;i++){
+      const a=i/TREE_N*Math.PI*2 + 0.21;
+      const d=17+ (i*3)%13;
+      const bx=Math.cos(a)*d, bz=Math.sin(a)*d;
+      const hh=1.5+((i*7)%5)*0.35;
+      box([bx,hh*0.45,bz],0.26,hh*0.9,0.26,[0.34,0.24,0.34]);
+      cone([bx,hh*0.78,bz],[0,1,0],1.9,0.95,7,[0.16,0.42,0.36]);
+      cone([bx,hh*1.28,bz],[0,1,0],1.5,0.72,7,[0.20,0.52,0.42]);
+      cone([bx,hh*1.72,bz],[0,1,0],1.0,0.46,7,[0.26,0.62,0.48]);
+    }
+
+    /* ---- unicorn ---- */
+    /* soft contact shadow under the unicorn */
+    ALPHA_CUR = 0.22;
+    {
+      const shN=20, rx=0.72, rz=1.12;
+      const ring=a=>[pos[0]+Math.cos(a)*rx, 0.02, pos[2]+Math.sin(a)*rz];
+      for(let i=0;i<shN;i++){
+        const a0=(i/shN)*Math.PI*2, a1=((i+1)/shN)*Math.PI*2;
+        tri([pos[0],0.02,pos[2]], ring(a1), ring(a0), [0.05,0.03,0.10], [pos[0],0.6,pos[2]]);
+      }
+    }
+    ALPHA_CUR = 1;
+
+    const x = xf(pos, yaw, 1.45);
+    buildUnicorn(x, simT*11.5, simT);
+
+    /* ---- rainbow trail on the path ---- */
+    ALPHA_CUR = 0.9;
+    trail.push({ p:[pos[0], 0.55, pos[2]], a:0 });
+    if(trail.length>TRAIL_MAX) trail.shift();
+    for(const s of trail) s.a += dt;
+    const alive = trail.length;
+    for(let i=0;i<alive-1;i++){
+      const A=trail[i], B=trail[i+1];
+      const age = A.a;
+      const fade = clamp(1 - age/2.4, 0, 1);
+      if(fade<=0.02) continue;
+      const t = i/(alive-1);
+      const warp = u => 0.26 + 0.60*Math.sin(Math.PI*Math.min(1,u*1.08));
+      const hA = warp(t), hB = warp(t*0.985);
+      const y0 = 0.14;
+      const col = hsl(0.02 + t*2.4 + simT*0.3, 0.85, 0.64);
+      const a0=[A.p[0], y0,     A.p[2]];
+      const a1=[A.p[0], y0+hA,  A.p[2]];
+      const b0=[B.p[0], y0,     B.p[2]];
+      const b1=[B.p[0], y0+hB,  B.p[2]];
+      tri(a0,b0,b1,col,[A.p[0],-2,A.p[2]]);
+      tri(a0,b1,a1,col,[A.p[0],-2,A.p[2]]);
+    }
+
+    /* ---- sparkles around the horn / path ---- */
+    const hornTip = null;
+    for(const s of sparkles){
+      const life = (simT*0.5 + s.phase) % 1;
+      const rise = life*1.9;
+      const wp = x.p([s.off[0]*(1-life*0.5), 1.05+rise, s.off[2]*(1-life*0.5)]);
+      const sz = s.size*(1-life*0.65);
+      const col = hsl(s.hue + simT*0.2);
+      const cr = Math.cos(s.spin*simT*2), sr = Math.sin(s.spin*simT*2);
+      const ax=[cr*sz, 0, sr*sz], ay=[0, sz*1.4, 0], az=[-sr*sz,0,cr*sz];
+      const p000=[wp[0]-ax[0]-ay[0]-az[0], wp[1]-ax[1]-ay[1]-az[1], wp[2]-ax[2]-ay[2]-az[2]];
+      const p111=[wp[0]+ax[0]+ay[0]+az[0], wp[1]+ax[1]+ay[1]+az[1], wp[2]+ax[2]+ay[2]+az[2]];
+      cone(wp,[ay[0],ay[1],ay[2]],sz*2.2,sz,5,col);
+      void p000; void p111; void hornTip;
+    }
+
+    /* ---- big rainbow arc (billboarded to the camera) ---- */
+    const fwd = V3.norm(V3.sub(cam.target,[
+      cam.target[0]+Math.cos(cam.pitch)*Math.sin(cam.yaw)*cam.dist,
+      cam.target[1]+Math.sin(cam.pitch)*cam.dist,
+      cam.target[2]+Math.cos(cam.pitch)*Math.cos(cam.yaw)*cam.dist
+    ]));
+    const right = V3.norm(V3.cross([0,1,0],fwd));
+    /* keep the arch framed: anchor it behind the current view, at a fixed depth */
+    const fh = V3.norm([fwd[0], 0, fwd[2]]);
+    const center=[cam.target[0]+fh[0]*18, -1.4, cam.target[2]+fh[2]*18];
+    const bands=8, SEG=54, R0=8.6, R1=11.6;
+    ALPHA_CUR = 0.44; SHADE_ON = 0;
+    for(let b=0;b<bands;b++){
+      const r0=R0+(R1-R0)*(b/bands), r1=R0+(R1-R0)*((b+1)/bands);
+      const bandCol=hsl((b/bands)*0.74, 0.92, 0.70);
+      const P=(rr,a)=>{
+        const ca=Math.cos(a), sa=Math.sin(a);
+        return [
+          center[0]+right[0]*rr*ca,
+          center[1]+rr*sa,
+          center[2]+right[2]*rr*ca
+        ];
+      };
+      for(let i=0;i<SEG;i++){
+        const a0=Math.PI*(i/SEG), a1=Math.PI*((i+1)/SEG);
+        const q=[P(r0,a0),P(r0,a1),P(r1,a1),P(r1,a0)];
+        tri(q[0],q[1],q[2],bandCol,[center[0],center[1]+6,center[2]]);
+        tri(q[0],q[2],q[3],bandCol,[center[0],center[1]+6,center[2]]);
+      }
+    }
+    ALPHA_CUR = 1; SHADE_ON = 1;
+
+    /* camera follows the unicorn gently */
+    cam.tTarget=[pos[0], 1.15, pos[2]];
+    cam.target=[mix(cam.target[0],cam.tTarget[0],0.055),
+                mix(cam.target[1],cam.tTarget[1],0.055),
+                mix(cam.target[2],cam.tTarget[2],0.055)];
+  }
+
+  function draw(){
+    resize();
+    const w=canvas.width, h=canvas.height;
+    const eye=[
+      cam.target[0]+Math.cos(cam.pitch)*Math.sin(cam.yaw)*cam.dist,
+      cam.target[1]+Math.sin(cam.pitch)*cam.dist,
+      cam.target[2]+Math.cos(cam.pitch)*Math.cos(cam.yaw)*cam.dist
+    ];
+    perspective(proj, 60*Math.PI/180, w/h, 0.1, 260);
+    lookAt(view, eye, cam.target, [0,1,0]);
+    mulMat(vp, proj, view);
+
+    uni.set(vp,0);
+    uni[16]=eye[0]; uni[17]=eye[1]; uni[18]=eye[2]; uni[19]=1;
+    uni[20]=fogCol[0]; uni[21]=fogCol[1]; uni[22]=fogCol[2]; uni[23]=1;
+    device.queue.writeBuffer(uniformBuf,0,uni);
+
+    const bytes = vn*7*4;
+    if(bytes>vbuf.size){
+      vbuf.destroy();
+      vbuf = device.createBuffer({ size:Math.ceil(bytes*1.25), usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST });
+    }
+    device.queue.writeBuffer(vbuf,0,VB.buffer,0,bytes);
+
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginRenderPass({
+      colorAttachments:[{
+        view: msaaView,
+        resolveTarget: ctx.getCurrentTexture().createView(),
+        clearValue:{ r:0, g:0, b:0, a:0 },
+        loadOp:'clear', storeOp:'store'
+      }],
+      depthStencilAttachment:{
+        view: depthView,
+        depthClearValue:1, depthLoadOp:'clear', depthStoreOp:'store'
+      }
+    });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0,bindGroup);
+    pass.setVertexBuffer(0,vbuf);
+    if(vn>0) pass.draw(vn,1,0,0);
+    pass.end();
+    device.queue.submit([enc.finish()]);
+  }
+
+  function loop(now){
+    const dt = Math.min(0.05,(now-t0)/1000);
+    t0=now; simT += dt;
+    buildScene(dt);
+    draw();
+    window.__proto.frames++;
+    window.__proto.tris = triCount;
+    window.__proto.ready = true;
+
+    fpsAcc += dt; fpsN++;
+    if(now-lastStat > 400){
+      const fps = fpsN/Math.max(fpsAcc,1e-6);
+      fpsEl.textContent = fps.toFixed(0)+' fps';
+      trisEl.textContent = triCount.toLocaleString('en-US')+' triangles';
+      window.__proto.fps = +fps.toFixed(1);
+      fpsAcc=0; fpsN=0; lastStat=now;
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  setTimeout(()=>hintEl.classList.add('fade'), 9000);
+}
+
+main().catch(e=>fail('Startup error: '+e.message));
+</script>
+</body>
+</html>
